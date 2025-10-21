@@ -5,34 +5,61 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 from sklearn.model_selection import KFold
 from sklearn.feature_selection import SelectKBest, mutual_info_regression
-from sklearn.linear_model import LinearRegression
+from sklearn.linear_model import Ridge
+from sklearn.ensemble import ExtraTreesRegressor
 from sklearn.metrics import r2_score
-from sklearn.impute import SimpleImputer
+import os.path
+import joblib
+from sklearn.experimental import enable_iterative_imputer
+from sklearn.impute import SimpleImputer, KNNImputer, IterativeImputer
 
 # Set to 'True' to produce submission file for test data
 FINAL_EVALUATION = False
 
 # Reproducible dictionary defining experiment
 configs = {'folds': 10,
-           'impute_method': 'mean',
-           'random_state': 42
+            'random_state': 42,
+            
+            ## Possible impute methods (mean, median, most_frequent, KNN, iterative)
+            'impute_method': 'iterative',
+
+            # 'knn_neighbours': 75, # KNN configuration
+            ## Possible neighbour weights for average (uniform, distance)
+            # 'knn_weight': 'uniform', # KNN configuration
+            'iterative_estimator': 'ExtraTreesRegressor(random_state=42)', # Iterative configuration
+            'iterative_iter': 5 # Iterative configuration
+
 }
 
 
-def imputation(X):
+def imputation(X, i):
     """Replace missing values in dataset using imputation
 
     Parameters
     ----------
     X: Dataset to learn imputation rule
+    i: current CV iteration (for model loading)
 
     Returns
     ----------
     imputer: Trained imputer for imputing new data points
     """
-    # TODO: Implement effective imputation
-    imputer = SimpleImputer(missing_values=np.nan, strategy=configs["impute_method"])
-    imputer.fit(X)
+    if configs['impute_method'] in ['mean', 'median', 'most_frequent']:
+        imputer = SimpleImputer(strategy=configs["impute_method"])
+        imputer.fit(X)
+    elif configs['impute_method'] == 'KNN':
+        imputer = KNNImputer(n_neighbors=configs['knn_neighbours'], weights=configs['knn_weight'])
+        imputer.fit(X)
+    elif configs['impute_method'] == 'iterative':
+        # Avoid long training times by loading pretrained model (if possible)
+        loadable_file = f'./models/imputers/{configs["iterative_estimator"].split('(')[0]}{configs["iterative_iter"]}_{i}.pkl'
+        if i != None and os.path.isfile(loadable_file):
+            imputer = joblib.load(loadable_file)
+        else:
+            imputer = IterativeImputer(random_state=configs['random_state'], estimator=eval(configs['iterative_estimator']), max_iter=configs['iterative_iter'])
+            imputer.fit(X)
+
+            joblib.dump(imputer, loadable_file)
 
     return imputer
 
@@ -86,18 +113,19 @@ def fit(X, y):
     model: Final model for prediction
     """
     # TODO: Implement effective regression model
-    model = LinearRegression()
+    model = Ridge()
     model.fit(X, y)
 
     return model
 
-def train_model(X, y):
+def train_model(X, y, i=None):
     """Run training pipeline 
     
     Parameters
     ----------
     X: Training data
-    y: Output to learn correct prediction
+    y: Labels to learn correct prediction
+    i: current CV iteration (for model loading)
 
     Returns
     ----------
@@ -108,7 +136,7 @@ def train_model(X, y):
     X: Manipulated training data
     y: Manipulated training labels
     """
-    imputer = imputation(X)
+    imputer = imputation(X, i)
     X = imputer.transform(X)
 
     detector = outlier_detection(X, y)
@@ -132,18 +160,18 @@ if __name__ == '__main__':
 
     if not FINAL_EVALUATION:
         # Use wandb to manage experiments
-        with wandb.init(project='AML_task1', config=configs) as run:
+        with wandb.init(project='AML_task1', config=configs, tags=['imputation'], name='impute '+ configs['impute_method'], notes='Using ridge and SelectKBest(mutual_info_regression, k=100).fit(X, y)') as run:
             # Apply KFold CV for model selection
             cv_stats = {'train_score': [], 'validation_score': []}
             folds = KFold(n_splits=configs['folds'])
-            for train_index, validation_index in folds.split(x_training_data):
+            for i, (train_index, validation_index) in enumerate(folds.split(x_training_data)):
                 x_val = x_training_data[validation_index, :]
                 y_val = y_training_data[validation_index]
                 x_train = x_training_data[train_index, :]
                 y_train = y_training_data[train_index]
 
                 # Pipeline to fit on training set
-                imputer, detector, selection, model, x_train, y_train = train_model(x_train, y_train)
+                imputer, detector, selection, model, x_train, y_train = train_model(x_train, y_train, i)
                 y_train_pred = model.predict(x_train)
 
                 # Pipeline to perform predictions on validation set
