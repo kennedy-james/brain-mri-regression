@@ -38,7 +38,7 @@ def imputation(X):
 
 
 def outlier_detection(X, y):
-    """Detect outlier data points that are to be removed
+    """Detect outlier data points / samples that are to be removed
 
     Parameters
     ----------
