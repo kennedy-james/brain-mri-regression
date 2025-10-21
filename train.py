@@ -13,9 +13,9 @@ from sklearn.impute import SimpleImputer
 FINAL_EVALUATION = False
 
 # Reproducible dictionary defining experiment
-configs = {"folds": 10,
-           "impute_method": "mean",
-           "random_state": 42
+configs = {'folds': 10,
+           'impute_method': 'mean',
+           'random_state': 42
 }
 
 
@@ -121,21 +121,21 @@ def train_model(X, y):
 
     return imputer, detector, selection, model, X, y
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     # Load the dataset for model training
-    x_training_data = pd.read_csv("./data/X_train.csv", skiprows=1, header=None).values[
+    x_training_data = pd.read_csv('./data/X_train.csv', skiprows=1, header=None).values[
         :, 1:
     ]
     y_training_data = (
-        pd.read_csv("./data/y_train.csv", skiprows=1, header=None).values[:, 1:].ravel()
+        pd.read_csv('./data/y_train.csv', skiprows=1, header=None).values[:, 1:].ravel()
     )
 
     if not FINAL_EVALUATION:
         # Use wandb to manage experiments
-        with wandb.init(project="AML_task1", config=configs) as run:
+        with wandb.init(project='AML_task1', config=configs) as run:
             # Apply KFold CV for model selection
             cv_stats = {'train_score': [], 'validation_score': []}
-            folds = KFold(n_splits=configs["folds"])
+            folds = KFold(n_splits=configs['folds'])
             for train_index, validation_index in folds.split(x_training_data):
                 x_val = x_training_data[validation_index, :]
                 y_val = y_training_data[validation_index]
@@ -167,20 +167,20 @@ if __name__ == "__main__":
             ax.set_title('Cross-Validation Results')
             ax.set_ylabel('R² Score')
             ax.set_xlabel('Score Type')
-            run.log({"CV_Boxplot": wandb.Image(fig)})
+            run.log({'CV_Boxplot': wandb.Image(fig)})
             plt.close(fig)
 
             # Store raw CV results in table
             cv_table = wandb.Table(dataframe=cv_df)
-            run.log({"CV Results": cv_table})
+            run.log({'CV Results': cv_table})
 
             # Log summary statistics
-            run.summary["mean_train_score"] = np.mean(cv_stats["train_score"])
-            run.summary["mean_validation_score"] = np.mean(cv_stats['validation_score'])
-            run.summary["std_train_score"] = np.std(cv_stats['train_score'])
-            run.summary["std_validation_score"] = np.std(cv_stats["validation_score"])
+            run.summary['mean_train_score'] = np.mean(cv_stats['train_score'])
+            run.summary['mean_validation_score'] = np.mean(cv_stats['validation_score'])
+            run.summary['std_train_score'] = np.std(cv_stats['train_score'])
+            run.summary['std_validation_score'] = np.std(cv_stats['validation_score'])
     else:
-        x_test = pd.read_csv("./data/X_test.csv", skiprows=1, header=None).values[:, 1:]
+        x_test = pd.read_csv('./data/X_test.csv', skiprows=1, header=None).values[:, 1:]
         x_train = x_training_data
         y_train = y_training_data
 
@@ -196,6 +196,6 @@ if __name__ == "__main__":
 
         # Save predictions to submission file with the given format
         table = pd.DataFrame(
-            {"id": np.arange(0, y_test_pred.shape[0]), "y": y_test_pred.flatten()}
+            {'id': np.arange(0, y_test_pred.shape[0]), 'y': y_test_pred.flatten()}
         )
-        table.to_csv("./submission.csv", index=False)
+        table.to_csv('./submission.csv', index=False)
