@@ -17,18 +17,17 @@ from sklearn.impute import SimpleImputer, KNNImputer, IterativeImputer
 FINAL_EVALUATION = False
 
 # Reproducible dictionary defining experiment
-configs = {'folds': 10,
-            'random_state': 42,
-            
-            ## Possible impute methods (mean, median, most_frequent, KNN, iterative)
-            'impute_method': 'iterative',
+configs = {
+    "folds": 10,
+    "random_state": 42,
 
-            # 'knn_neighbours': 75, # KNN configuration
-            ## Possible neighbour weights for average (uniform, distance)
-            # 'knn_weight': 'uniform', # KNN configuration
-            'iterative_estimator': 'ExtraTreesRegressor(random_state=42)', # Iterative configuration
-            'iterative_iter': 5 # Iterative configuration
-
+    ## Possible impute methods (mean, median, most_frequent, KNN, iterative)
+    "impute_method": "iterative",
+    # 'knn_neighbours': 75, # KNN configuration
+    ## Possible neighbour weights for average (uniform, distance)
+    # 'knn_weight': 'uniform', # KNN configuration
+    "iterative_estimator": "Ridge()",  # Iterative configuration
+    "iterative_iter": 1,  # Iterative configuration
 }
 
 
@@ -44,19 +43,25 @@ def imputation(X, i):
     ----------
     imputer: Trained imputer for imputing new data points
     """
-    if configs['impute_method'] in ['mean', 'median', 'most_frequent']:
+    if configs["impute_method"] in ["mean", "median", "most_frequent"]:
         imputer = SimpleImputer(strategy=configs["impute_method"])
         imputer.fit(X)
-    elif configs['impute_method'] == 'KNN':
-        imputer = KNNImputer(n_neighbors=configs['knn_neighbours'], weights=configs['knn_weight'])
+    elif configs["impute_method"] == "KNN":
+        imputer = KNNImputer(
+            n_neighbors=configs["knn_neighbours"], weights=configs["knn_weight"]
+        )
         imputer.fit(X)
-    elif configs['impute_method'] == 'iterative':
+    elif configs["impute_method"] == "iterative":
         # Avoid long training times by loading pretrained model (if possible)
         loadable_file = f'./models/imputers/{configs["iterative_estimator"].split('(')[0]}{configs["iterative_iter"]}_{i}.pkl'
         if i != None and os.path.isfile(loadable_file):
             imputer = joblib.load(loadable_file)
         else:
-            imputer = IterativeImputer(random_state=configs['random_state'], estimator=eval(configs['iterative_estimator']), max_iter=configs['iterative_iter'])
+            imputer = IterativeImputer(
+                random_state=configs["random_state"],
+                estimator=eval(configs["iterative_estimator"]),
+                max_iter=configs["iterative_iter"],
+            )
             imputer.fit(X)
 
             joblib.dump(imputer, loadable_file)
@@ -118,9 +123,10 @@ def fit(X, y):
 
     return model
 
+
 def train_model(X, y, i=None):
-    """Run training pipeline 
-    
+    """Run training pipeline
+
     Parameters
     ----------
     X: Training data
@@ -149,29 +155,40 @@ def train_model(X, y, i=None):
 
     return imputer, detector, selection, model, X, y
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     # Load the dataset for model training
-    x_training_data = pd.read_csv('./data/X_train.csv', skiprows=1, header=None).values[
+    x_training_data = pd.read_csv("./data/X_train.csv", skiprows=1, header=None).values[
         :, 1:
     ]
     y_training_data = (
-        pd.read_csv('./data/y_train.csv', skiprows=1, header=None).values[:, 1:].ravel()
+        pd.read_csv("./data/y_train.csv", skiprows=1, header=None).values[:, 1:].ravel()
     )
 
     if not FINAL_EVALUATION:
         # Use wandb to manage experiments
-        with wandb.init(project='AML_task1', config=configs, tags=['imputation'], name='impute '+ configs['impute_method'], notes='Using ridge and SelectKBest(mutual_info_regression, k=100).fit(X, y)') as run:
+        with wandb.init(
+            project="AML_task1",
+            config=configs,
+            tags=["imputation"],
+            name="impute " + configs["impute_method"],
+            notes="Using ridge and SelectKBest(mutual_info_regression, k=100).fit(X, y)",
+        ) as run:
             # Apply KFold CV for model selection
-            cv_stats = {'train_score': [], 'validation_score': []}
-            folds = KFold(n_splits=configs['folds'])
-            for i, (train_index, validation_index) in enumerate(folds.split(x_training_data)):
+            cv_stats = {"train_score": [], "validation_score": []}
+            folds = KFold(n_splits=configs["folds"])
+            for i, (train_index, validation_index) in enumerate(
+                folds.split(x_training_data)
+            ):
                 x_val = x_training_data[validation_index, :]
                 y_val = y_training_data[validation_index]
                 x_train = x_training_data[train_index, :]
                 y_train = y_training_data[train_index]
 
                 # Pipeline to fit on training set
-                imputer, detector, selection, model, x_train, y_train = train_model(x_train, y_train, i)
+                imputer, detector, selection, model, x_train, y_train = train_model(
+                    x_train, y_train, i
+                )
                 y_train_pred = model.predict(x_train)
 
                 # Pipeline to perform predictions on validation set
@@ -184,31 +201,31 @@ if __name__ == '__main__':
                 # Evaluate the model on training and validation sets
                 train_score = r2_score(y_train, y_train_pred)
                 val_score = r2_score(y_val, y_val_pred)
-                
-                cv_stats['train_score'].append(train_score)
-                cv_stats['validation_score'].append(val_score)
+
+                cv_stats["train_score"].append(train_score)
+                cv_stats["validation_score"].append(val_score)
 
             # Generate boxplots
             cv_df = pd.DataFrame(cv_stats)
             fig, ax = plt.subplots(figsize=(11, 13))
             sns.boxplot(data=cv_df, ax=ax)
-            ax.set_title('Cross-Validation Results')
-            ax.set_ylabel('R² Score')
-            ax.set_xlabel('Score Type')
-            run.log({'CV_Boxplot': wandb.Image(fig)})
+            ax.set_title("Cross-Validation Results")
+            ax.set_ylabel("R² Score")
+            ax.set_xlabel("Score Type")
+            run.log({"CV_Boxplot": wandb.Image(fig)})
             plt.close(fig)
 
             # Store raw CV results in table
             cv_table = wandb.Table(dataframe=cv_df)
-            run.log({'CV Results': cv_table})
+            run.log({"CV Results": cv_table})
 
             # Log summary statistics
-            run.summary['mean_train_score'] = np.mean(cv_stats['train_score'])
-            run.summary['mean_validation_score'] = np.mean(cv_stats['validation_score'])
-            run.summary['std_train_score'] = np.std(cv_stats['train_score'])
-            run.summary['std_validation_score'] = np.std(cv_stats['validation_score'])
+            run.summary["mean_train_score"] = np.mean(cv_stats["train_score"])
+            run.summary["mean_validation_score"] = np.mean(cv_stats["validation_score"])
+            run.summary["std_train_score"] = np.std(cv_stats["train_score"])
+            run.summary["std_validation_score"] = np.std(cv_stats["validation_score"])
     else:
-        x_test = pd.read_csv('./data/X_test.csv', skiprows=1, header=None).values[:, 1:]
+        x_test = pd.read_csv("./data/X_test.csv", skiprows=1, header=None).values[:, 1:]
         x_train = x_training_data
         y_train = y_training_data
 
@@ -224,6 +241,6 @@ if __name__ == '__main__':
 
         # Save predictions to submission file with the given format
         table = pd.DataFrame(
-            {'id': np.arange(0, y_test_pred.shape[0]), 'y': y_test_pred.flatten()}
+            {"id": np.arange(0, y_test_pred.shape[0]), "y": y_test_pred.flatten()}
         )
-        table.to_csv('./submission.csv', index=False)
+        table.to_csv("./submission.csv", index=False)
