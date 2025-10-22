@@ -5,7 +5,7 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 from sklearn.model_selection import KFold
 from sklearn.feature_selection import SelectKBest, mutual_info_regression
-from sklearn.linear_model import Ridge
+from sklearn.linear_model import Ridge # Used for imputation
 from sklearn.ensemble import ExtraTreesRegressor
 from sklearn.metrics import r2_score
 import os.path
@@ -28,6 +28,8 @@ configs = {
     # 'knn_weight': 'uniform', # KNN configuration
     "iterative_estimator": "Ridge()",  # Iterative configuration
     "iterative_iter": 1,  # Iterative configuration
+
+    "regression_method": "ExtraTreesRegressor",
 }
 
 
@@ -118,7 +120,7 @@ def fit(X, y):
     model: Final model for prediction
     """
     # TODO: Implement effective regression model
-    model = Ridge()
+    model = ExtraTreesRegressor(random_state=42)
     model.fit(X, y)
 
     return model
@@ -170,9 +172,9 @@ if __name__ == "__main__":
         with wandb.init(
             project="AML_task1",
             config=configs,
-            tags=["imputation"],
-            name="impute " + configs["impute_method"],
-            notes="Using ridge and SelectKBest(mutual_info_regression, k=100).fit(X, y)",
+            tags=["regression"],
+            name="regressor " + configs["regression_method"],
+            notes="SelectKBest(mutual_info_regression, k=100).fit(X, y)",
         ) as run:
             # Apply KFold CV for model selection
             cv_stats = {"train_score": [], "validation_score": []}
