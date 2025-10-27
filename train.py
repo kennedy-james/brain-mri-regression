@@ -26,6 +26,9 @@ from sklearn.pipeline import make_pipeline
 from sklearn import linear_model
 from sklearn.preprocessing import FunctionTransformer
 
+# Jef imports
+from sklearn.ensemble import IsolationForest
+
 # Set to 'True' to produce submission file for test data
 FINAL_EVALUATION = False
 
@@ -104,7 +107,9 @@ def outlier_detection(X, y):
     """
 
     # TODO: Replace detector with one that returns indices that are supposed to be deleted
-    detector = lambda x: x
+    iso = IsolationForest(contamination=0.05, random_state=configs["random_state"])
+    yhat = iso.fit_predict(X)
+    detector = lambda X: X[yhat == 1, :]
     return detector
 
 class CorrelationRemover(BaseEstimator, TransformerMixin):
@@ -183,7 +188,6 @@ def fit(X, y):
     model.fit(X, y)
     #model = RandomForestRegressor(n_estimators=100, random_state=42, n_jobs=-1)
     #model.fit(X, y)
-
     return model
 
 
@@ -207,16 +211,12 @@ def train_model(X, y, i=None):
     """
     imputer = imputation(X, i)
     X = imputer.transform(X)
-
     detector = outlier_detection(X, y)
     X = detector(X)
-
     selection = feature_selection(X, y)
     X = selection.transform(X)
     print(f"Selected features: {X.shape[1]}")
-
     model = fit(X, y)
-
     return imputer, detector, selection, model, X, y
 
 
@@ -259,14 +259,12 @@ if __name__ == "__main__":
                 x_val = imputer.transform(x_val)
                 x_val = detector(x_val)
                 x_val = selection.transform(x_val)
-
                 y_val_pred = model.predict(x_val)
 
                 # Evaluate the model on training and validation sets
                 train_score = r2_score(y_train, y_train_pred)
                 val_score = r2_score(y_val, y_val_pred)
                 print(f"Fold {i}: Train R² = {train_score:.4f}, Validation R² = {val_score:.4f}")
-
                 cv_stats["train_score"].append(train_score)
                 cv_stats["validation_score"].append(val_score)
 
@@ -300,9 +298,7 @@ if __name__ == "__main__":
         # Pipeline to perform predictions on test set
         x_test = imputer.transform(x_test)
         x_test = detector(x_test)
-
         x_test = selection.transform(x_test)
-
         y_test_pred = model.predict(x_test)
 
         # Save predictions to submission file with the given format
