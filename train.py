@@ -4,20 +4,26 @@ import wandb
 import matplotlib.pyplot as plt
 import seaborn as sns
 from sklearn.model_selection import KFold
-from sklearn.feature_selection import SelectKBest, mutual_info_regression
+from sklearn.feature_selection import SelectKBest, mutual_info_regression, VarianceThreshold, SelectFromModel
 from sklearn.linear_model import Ridge # Used for imputation
 from sklearn.ensemble import ExtraTreesRegressor
 from sklearn.metrics import r2_score
 import os.path
 import joblib
 from sklearn.experimental import enable_iterative_imputer
+from sklearn.base import BaseEstimator, TransformerMixin
 from sklearn.impute import SimpleImputer, KNNImputer, IterativeImputer
+from sklearn.preprocessing import StandardScaler
 
 #Lars imports
 from xgboost import XGBRegressor
 from sklearn.feature_selection import VarianceThreshold
 from sklearn.ensemble import RandomForestRegressor
 from sklearn.model_selection import train_test_split
+
+from sklearn import pipeline
+from sklearn.pipeline import make_pipeline
+from sklearn import linear_model
 
 # Set to 'True' to produce submission file for test data
 FINAL_EVALUATION = False
@@ -28,10 +34,10 @@ configs = {
     "random_state": 42,
 
     ## Possible impute methods (mean, median, most_frequent, KNN, iterative)
-    "impute_method": "mean",
-    # 'knn_neighbours': 75, # KNN configuration
+    "impute_method": "KNN",  # Imputation configuration
+    'knn_neighbours': 75, # KNN configuration
     ## Possible neighbour weights for average (uniform, distance)
-    # 'knn_weight': 'uniform', # KNN configuration
+    'knn_weight': 'uniform', # KNN configuration
     "iterative_estimator": "Ridge()",  # Iterative configuration
     "iterative_iter": 1,  # Iterative configuration
 
@@ -59,9 +65,9 @@ def imputation(X, i):
         imputer = SimpleImputer(strategy=configs["impute_method"])
         imputer.fit(X)
     elif configs["impute_method"] == "KNN":
-        imputer = KNNImputer(
-            n_neighbors=configs["knn_neighbours"], weights=configs["knn_weight"]
-        )
+        scaler = StandardScaler()
+        knn_imputer = KNNImputer()
+        imputer = pipeline.make_pipeline(scaler, knn_imputer)
         imputer.fit(X)
     elif configs["impute_method"] == "iterative":
         # Avoid long training times by loading pretrained model (if possible)
@@ -98,129 +104,45 @@ def outlier_detection(X, y):
     detector = lambda x: x
     return detector
 
-def xgb_feature_importance_selector(X, y, importance_thresh=0.0001):
-    """
-    Fits an XGBoost model and selects features based on importance threshold.
-    Returns a boolean mask for keeping features above the threshold.
-    """
-    model = XGBRegressor(random_state=configs["random_state"], n_estimators=100, verbosity=0)
-    model.fit(X, y)
-    
-    importances = model.feature_importances_
-    keep_mask = importances > importance_thresh
+class CorrelationRemover(BaseEstimator, TransformerMixin):
+    def __init__(self, threshold=0.95):
+        self.threshold = threshold
+        self.to_drop_ = None
 
-    return keep_mask, importances
-
-class FeatureSelector:
-    """
-    Feature selection to remove irrelevant or redundant features.
-    
-    Parameters
-    ----------
-    X: NumPy array of features on which to train feature selector
-    y: NumPy array of labels for associated features
-    var_thresh: Variance threshold for feature selection
-    corr_thresh: Correlation threshold for feature selection
-    xgb_thresh: XGBoost feature importance threshold
-    
-    Returns
-    ----------
-    selector: Trained feature selector that can be applied to other data points
-    """
-    def __init__(self, var_thresh=None, corr_thresh=None, xgb_thresh=None, print_removed_ones=False):
-        self.var_thresh = var_thresh
-        self.corr_thresh = corr_thresh
-        self.xgb_thresh = xgb_thresh
-        self.mask_ = None  # Will be set on fit
-        self.print_removed_ones = print_removed_ones
-
-    def fit(self, X, y):
-        """
-        Fit the selector: compute the mask based on thresholds.
-        X and y are NumPy arrays.
-        y is required if xgb_thresh is not None.
-        Handles NaNs by ignoring them in variance and correlation calculations.
-        """
-        # Convert to DataFrame for easy column tracking
-        df_original = pd.DataFrame(X)
-        df_filtered = df_original.copy()
-
-        # 1. Low-variance filter
-        if self.var_thresh is not None:
-            # Temporarily impute NaNs for variance calc
-            df_for_var = df_filtered.copy()
-            col_means = df_for_var.mean(numeric_only=True, skipna=True)
-            df_for_var = df_for_var.fillna(col_means)
-            
-            selector = VarianceThreshold(threshold=self.var_thresh)
-            var_mask = selector.fit(df_for_var).get_support()
-
-            # Printing only: Variance filter removals
-            n_removed_var = np.sum(~var_mask)
-            print(f"Variance filter (thresh={self.var_thresh}): Removed {n_removed_var} features")
-            if n_removed_var > 0 and self.print_removed_ones:
-                dropped_mask_var = ~var_mask
-                dropped_cols_var = df_original.columns[dropped_mask_var]
-                dropped_vars = selector.variances_[dropped_mask_var]
-                for col, var_val in zip(dropped_cols_var, dropped_vars):
-                    print(f"  - Column {col}: variance = {var_val:.6f}")
-
-            df_filtered = df_filtered.iloc[:, var_mask]
-
-        # 2. High-correlation filter
-        if self.corr_thresh is not None:
-            corr_matrix = df_filtered.corr(numeric_only=True).abs()
-            upper_triangle = corr_matrix.where(np.triu(np.ones(corr_matrix.shape), k=1).astype(bool))
-            highly_correlated_features_to_drop = [col for col in upper_triangle.columns if any(upper_triangle[col] > self.corr_thresh)]
-            corr_mask = ~df_filtered.columns.isin(highly_correlated_features_to_drop)
-
-            # Printing only: Correlation filter removals
-            n_removed_corr = len(highly_correlated_features_to_drop)
-            print(f"Correlation filter (thresh={self.corr_thresh}): Removed {n_removed_corr} features")
-            if n_removed_corr > 0 and self.print_removed_ones:
-                for feat in highly_correlated_features_to_drop:
-                    # Find the maximum correlation for this feature (with others)
-                    max_corr_col = upper_triangle[feat].idxmax()
-                    max_corr_val = upper_triangle[feat].max()
-                    print(f"  - Column {feat}: max correlation = {max_corr_val:.4f} (with Column {max_corr_col})")
-
-            df_filtered = df_filtered.loc[:, corr_mask]
-
-        # 3. XGBoost importance filter
-        if self.xgb_thresh is not None:
-            # Convert back to NumPy for XGBoost
-            X_for_xgb = df_filtered.values
-            xgb_mask, importances = xgb_feature_importance_selector(X_for_xgb, y, importance_thresh=self.xgb_thresh)
-
-            # Printing only: XGBoost filter removals (uses returned importances)
-            dropped_mask_xgb = ~xgb_mask
-            n_removed_xgb = np.sum(dropped_mask_xgb)
-            print(f"XGBoost filter (thresh={self.xgb_thresh}): Removed {n_removed_xgb} features")
-            if n_removed_xgb > 0 and self.print_removed_ones:
-                dropped_cols_xgb = df_filtered.columns[dropped_mask_xgb]
-                dropped_importances = importances[dropped_mask_xgb]
-                for col, imp_val in zip(dropped_cols_xgb, dropped_importances):
-                    print(f"  - Column {col}: importance = {imp_val:.6f}")
-
-            df_filtered = df_filtered.iloc[:, xgb_mask]
-
-        # Final mask: boolean over original indices (stacked via column tracking)
-        self.mask_ = df_original.columns.isin(df_filtered.columns)
-
-        # Final summary print
-        print(f"✅ Selected {self.mask_.sum()} / {X.shape[1]} features "
-              f"({self.mask_.sum()/X.shape[1]*100:.1f}%)")
-        
+    def fit(self, X, y=None):
+        df = pd.DataFrame(X)
+        corr_matrix = df.corr(numeric_only=True).abs()
+        upper_triangle = corr_matrix.where(np.triu(np.ones(corr_matrix.shape), k=1).astype(bool))
+        self.to_drop_ = [col for col in upper_triangle.columns if any(upper_triangle[col] > self.threshold)]
         return self
-    
+
     def transform(self, X):
-        """
-        Apply the fitted mask to select columns from X.
-        Assumes X is a NumPy array with the same number of features as during fit.
-        """
-        if self.mask_ is None:
-            raise ValueError("Must call fit before transform.")
-        return X[:, self.mask_]
+        if self.to_drop_ is None:
+            raise ValueError("Must fit before transform.")
+        df = pd.DataFrame(X)
+        return df.drop(columns=self.to_drop_).values
+
+
+def feature_selection(x_train, y_train, varicance_threshold=0.01, correlation_threshold=0.95, mi_k=200, rf_max_features=120, rf_n_estimators=70):
+    if hasattr(x_train, 'values'):
+        x_train = x_train.values
+        print("Converted to numpy array")
+
+    rf = RandomForestRegressor(n_estimators=rf_n_estimators, random_state=42, n_jobs=-1)
+    rf_selector = SelectFromModel(rf, max_features=rf_max_features, threshold='0.1*mean')
+
+    selection = make_pipeline(
+        # Low variance removal
+        VarianceThreshold(threshold=configs["var_thresh"]), # 0.01
+        # High correlation removal
+        CorrelationRemover(threshold=configs["corr_thresh"]), # 0.95
+        # Univariate feature selection
+        SelectKBest(score_func=mutual_info_regression, k=min(200, x_train.shape[1])),
+        # Non-linear embedded selection (RF instead of Lasso)
+        rf_selector
+    )
+    selection.fit(x_train, y_train)
+    return selection
 
 
 def fit(X, y):
@@ -286,9 +208,9 @@ def train_model(X, y, i=None):
     detector = outlier_detection(X, y)
     X = detector(X)
 
-    selection = FeatureSelector(var_thresh=configs["var_thresh"], corr_thresh=configs["corr_thresh"], xgb_thresh=configs["xgb_thresh"], print_removed_ones=configs["print_removed_ones"])
-    selection.fit(X, y)
+    selection = feature_selection(X, y)
     X = selection.transform(X)
+    print(f"Selected features: {X.shape[1]}")
 
     model = fit(X, y)
 
@@ -375,6 +297,7 @@ if __name__ == "__main__":
         # Pipeline to perform predictions on test set
         x_test = imputer.transform(x_test)
         x_test = detector(x_test)
+
         x_test = selection.transform(x_test)
 
         y_test_pred = model.predict(x_test)
