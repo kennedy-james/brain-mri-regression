@@ -26,6 +26,7 @@ from sklearn.ensemble import IsolationForest
 FINAL_EVALUATION = False
 
 # Reproducible dictionary defining experiment
+OUTLIER_DETECTORS = ['zscore', 'knn', 'isolationForest']
 configs = {
     "folds": 10,
     "random_state": 42,
@@ -43,6 +44,7 @@ configs = {
     "var_thresh": 0.01, "corr_thresh": 0.95, "xgb_thresh": 0.00001, "print_removed_ones": False,
     #variance #4 with 0, #59 with 0.008
     #correlation #12 with 0.999, #30 with 0.99, #37 with 0.98, 45 with 0.95, #53 with 0.9
+    "outlier_detection": OUTLIER_DETECTORS[2],
 }
 
 
@@ -94,13 +96,25 @@ def outlier_detection(X, y):
 
     Returns
     ----------
-    detector: Detector that returns indices of outliers that should be deleted
+    detector: Detector that removes from the data set the outlier samples
     """
+    if configs['outlier_detection'] == OUTLIER_DETECTORS[0]:  # z-score
+        from scipy import stats
+        zscores = np.abs(stats.zscore(X, nan_policy='omit'))
+        threshold = 3 # standard deviations
+        yhat = (zscores > threshold).any(axis=1).astype(int)
+        detector = lambda X: X[yhat == 0, :]  # 1 for outliers
+    elif configs['outlier_detection'] == OUTLIER_DETECTORS[1]:  # KNN
+        from pyod.models.knn import KNN
+        clf = KNN()
+        clf.fit(X)
+        yhat = clf.labels_ # 1 for outliers
+        detector = lambda X: X[yhat == 0, :]
+    elif configs['outlier_detection'] == OUTLIER_DETECTORS[2]:  # Isolation Forest
+        iso = IsolationForest(contamination=0.05, random_state=configs["random_state"])
+        yhat = iso.fit_predict(X)
+        detector = lambda X: X[yhat == 1, :] # -1 for outliers
 
-    # TODO: Replace detector with one that returns indices that are supposed to be deleted
-    iso = IsolationForest(contamination=0.05, random_state=configs["random_state"])
-    yhat = iso.fit_predict(X)
-    detector = lambda X: X[yhat == 1, :]
     return detector
 
 def xgb_feature_importance_selector(X, y, importance_thresh=0.0001):
