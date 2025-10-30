@@ -24,6 +24,7 @@ from sklearn.model_selection import train_test_split
 from sklearn import pipeline
 from sklearn.pipeline import make_pipeline
 from sklearn import linear_model
+from sklearn.preprocessing import FunctionTransformer
 
 # Set to 'True' to produce submission file for test data
 FINAL_EVALUATION = False
@@ -35,7 +36,7 @@ configs = {
 
     ## Possible impute methods (mean, median, most_frequent, KNN, iterative)
     "impute_method": "KNN",  # Imputation configuration
-    'knn_neighbours': 75, # KNN configuration
+    'knn_neighbours': 5, # KNN configuration
     ## Possible neighbour weights for average (uniform, distance)
     'knn_weight': 'uniform', # KNN configuration
     "iterative_estimator": "Ridge()",  # Iterative configuration
@@ -43,7 +44,7 @@ configs = {
 
     "regression_method": "ExtraTreesRegressor",
 
-    "var_thresh": 0.01, "corr_thresh": 0.95, "xgb_thresh": 0.00001, "print_removed_ones": False,
+    "var_thresh": 0.01, "corr_thresh": 0.95,
     #variance #4 with 0, #59 with 0.008
     #correlation #12 with 0.999, #30 with 0.99, #37 with 0.98, 45 with 0.95, #53 with 0.9
 }
@@ -67,8 +68,10 @@ def imputation(X, i):
     elif configs["impute_method"] == "KNN":
         scaler = StandardScaler()
         knn_imputer = KNNImputer()
-        imputer = pipeline.make_pipeline(scaler, knn_imputer)
+        unscaler = FunctionTransformer(lambda X: scaler.inverse_transform(X))
+        imputer = pipeline.make_pipeline(scaler, knn_imputer, unscaler)
         imputer.fit(X)
+
     elif configs["impute_method"] == "iterative":
         # Avoid long training times by loading pretrained model (if possible)
         loadable_file = f'./models/imputers/{configs["iterative_estimator"].split('(')[0]}{configs["iterative_iter"]}_{i}.pkl'
@@ -157,26 +160,26 @@ def fit(X, y):
     model: Final model for prediction
     """
     # TODO: Implement effective regression model
-    #model = ExtraTreesRegressor(random_state=42)
+    model = ExtraTreesRegressor(random_state=42)
     #model.fit(X, y)
 
     #model = XGBRegressor(random_state=configs["random_state"], n_estimators=100, verbosity=0)
     # Split 20% for early stopping (internal val)
     
     # Balanced reg from best run + capacity boost
-    model = XGBRegressor(
-        random_state=configs["random_state"],
-        n_estimators=250,  # +50 for more stable fitting
-        max_depth=4,
-        min_child_weight=10,
-        gamma=0.5,
-        subsample=0.7,
-        colsample_bytree=0.7,
-        reg_alpha=0.3,  # Mild L1 for feature sparsity
-        reg_lambda=1.5,  # Moderate L2 for smoothness
-        learning_rate=0.05,
-        verbosity=0
-    )
+    #model = XGBRegressor(
+    #    random_state=configs["random_state"],
+    #    n_estimators=250,  # +50 for more stable fitting
+    #    max_depth=4,
+    #    min_child_weight=10,
+    #    gamma=0.5,
+    #    subsample=0.7,
+    #    colsample_bytree=0.7,
+    #    reg_alpha=0.3,  # Mild L1 for feature sparsity
+    #    reg_lambda=1.5,  # Moderate L2 for smoothness
+    #    learning_rate=0.05,
+    #    verbosity=0
+    #)
     model.fit(X, y)
     #model = RandomForestRegressor(n_estimators=100, random_state=42, n_jobs=-1)
     #model.fit(X, y)
