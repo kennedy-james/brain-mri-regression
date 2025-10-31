@@ -1,68 +1,83 @@
+import os.path
+import joblib
+import wandb
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
-from sklearn.model_selection import KFold
-from sklearn.feature_selection import SelectKBest, mutual_info_regression
-from sklearn.linear_model import Ridge  # Used for imputation
+from sklearn.base import BaseEstimator, TransformerMixin
 from sklearn.ensemble import ExtraTreesRegressor
-from sklearn.metrics import r2_score
-import os.path
-import joblib
 from sklearn.experimental import enable_iterative_imputer
+from sklearn.feature_selection import mutual_info_regression, SelectFromModel, SelectPercentile
 from sklearn.impute import SimpleImputer, KNNImputer, IterativeImputer
+from sklearn.linear_model import Ridge  # Used for imputation AND regression
+from sklearn.metrics import r2_score
+from sklearn.model_selection import KFold
+from sklearn.preprocessing import StandardScaler
 
 # Lars imports
 from xgboost import XGBRegressor
-from sklearn.feature_selection import VarianceThreshold
+from sklearn import pipeline
 from sklearn.ensemble import RandomForestRegressor
-from sklearn.model_selection import train_test_split
+from sklearn.feature_selection import VarianceThreshold
+from sklearn.pipeline import make_pipeline
 
 # Jef imports
-from sklearn.ensemble import IsolationForest
-# Import for KNN outlier detection
+from enum import Enum, auto
 from pyod.models.knn import KNN
+from sklearn.ensemble import IsolationForest
 
-# Set to 'True' to produce submission file for test data
-FINAL_EVALUATION = False
+
+class RunMode(Enum):
+    FINAL_EVALUATION = auto() # produce submission file for test data
+    WANDB = auto() # log to wandb
+    CVRUN = auto()
+
+RUN_MODE = RunMode.CVRUN
 
 # Reproducible dictionary defining experiment
+IMPUTERS = ['mean', 'median', 'most_frequent', 'KNN', 'iterative']
 OUTLIER_DETECTORS = ['zscore', 'knn', 'isolationForest']
-# === NEW: Define models to test ===
-REGRESSION_METHODS = ["ExtraTreesRegressor", "XGBRegressor"]
+REGRESSORS = ['XGBRegressor','ExtraTreesRegressor', 'Ridge', 'RandomForestRegressor']
 
 configs = {
-    "folds": 10,
-    "random_state": 42,
-
-    ## Possible impute methods (mean, median, most_frequent, KNN, iterative)
-    "impute_method": "mean",
-    "iterative_estimator": "Ridge()",  # Iterative configuration
-    "iterative_iter": 1,  # Iterative configuration
-
-    # This will be set by the loop in __main__
-    "regression_method": REGRESSION_METHODS[0],
-    "var_thresh": 0.01, "corr_thresh": 0.95, "xgb_thresh": 0.00001, "print_removed_ones": False,
-
-    # This will be set by the loop in __main__
-    "outlier_detection": OUTLIER_DETECTORS[0],
+    'folds': 10,
+    'random_state': 42,
+    'impute_method': IMPUTERS[4],
+    'knn_neighbours': 75,
+    'knn_weight': 'uniform',  # possible neighbour weights for average (uniform, distance)
+    'iterative_estimator': 'Ridge()',  # Iterative configuration
+    'iterative_iter': 1,  # Iterative configuration
+    'outlier_detection': OUTLIER_DETECTORS[0],
+    'regression_method': REGRESSORS[0],
+    'selection': {'thresh_var': 0.01, 'thresh_corr': 0.95},
 }
 
 
 def imputation(X, i):
-    # (No changes to this function)
-    """Replace missing values in dataset using imputation..."""
-    if configs["impute_method"] in ["mean", "median", "most_frequent"]:
+    """Replace missing values in dataset using imputation
+
+    Parameters
+    ----------
+    X: Dataset to learn imputation rule
+    i: current CV iteration (for model loading)
+
+    Returns
+    ----------
+    imputer: Trained imputer for imputing new data points
+    """
+    method = configs["impute_method"]
+    if method in IMPUTERS[:3]: # mean, median, most_frequent
         imputer = SimpleImputer(strategy=configs["impute_method"])
         imputer.fit(X)
-    elif configs["impute_method"] == "KNN":
-        imputer = KNNImputer(
-            n_neighbors=configs["knn_neighbours"], weights=configs["knn_weight"]
-        )
+    elif method == IMPUTERS[3]: # KNN
+        scaler = StandardScaler()
+        knn_imputer = KNNImputer(n_neighbors=configs["knn_neighbours"], weights=configs["knn_weight"])
+        imputer = pipeline.make_pipeline(scaler, knn_imputer)
         imputer.fit(X)
-    elif configs["impute_method"] == "iterative":
-        loadable_file = f'./models/imputers/{configs["iterative_estimator"].split('(')[0]}{configs["iterative_iter"]}_{i}.pkl'
-        if i != None and os.path.isfile(loadable_file):
+    elif method == IMPUTERS[4]: # iterative imputer
+        loadable_file = f'./models/imputers/{configs["iterative_estimator"].split("(")[0]}{configs["iterative_iter"]}_{i}.pkl'
+        if i is not None and os.path.isfile(loadable_file):
             imputer = joblib.load(loadable_file)
         else:
             imputer = IterativeImputer(
@@ -76,140 +91,96 @@ def imputation(X, i):
 
 
 def outlier_detection(X, y):
-    # (No changes to this function - this is the corrected V2 from last time)
-    """(REFACTORED handles conflict only in this method to merge in main) Fits an outlier detector on X..."""
-    if configs['outlier_detection'] == OUTLIER_DETECTORS[0]:  # z-score (STATEFUL, MEAN-BASED)
-        from scipy import stats
-        threshold = 3
+    """Detect outlier data points / samples that are to be removed
 
+    Parameters
+    ----------
+    X: Features on which to train outlier prediction
+    y: Labels for associated features
+
+    Returns
+    ----------
+    detector: Detector that returns indices of inliers that should be kept
+    """
+    def safe_detector(predict_fn):
+        def wrapped(X_data):
+            detector = predict_fn(X_data)
+            if np.sum(detector) == 0:
+                print(f"WARNING: {method} removed all samples. Keeping all as fallback.")
+                return np.ones(X_data.shape[0], dtype=bool)
+            return detector
+
+        return wrapped
+
+    method = configs['outlier_detection']
+    if method == OUTLIER_DETECTORS[0]:  # z-score
+        threshold = 3 # std devs
         print(f"Using z-score detector (stateful, mean-based, threshold={threshold})")
         mean_train = np.nanmean(X, axis=0)
         std_train = np.nanstd(X, axis=0)
         std_train[std_train == 0] = 1.0
 
-        def get_keep_mask(X_data):
+        def predict_fn(X_data):
             zscores = np.abs((X_data - mean_train) / std_train)
-            mean_zscore_per_sample = np.mean(zscores, axis=1)
-            keep_mask = (mean_zscore_per_sample <= threshold)
+            return np.mean(zscores, axis=1) <= threshold
 
-            if np.sum(keep_mask) == 0:
-                print(f"WARNING: Z-score (mean) with threshold={threshold} removed all samples.")
-                print("Fallback: Keeping all samples to prevent crash.")
-                return np.ones(X_data.shape[0], dtype=bool)
-            return keep_mask
+        get_detector = safe_detector(predict_fn)
 
-    elif configs['outlier_detection'] == OUTLIER_DETECTORS[1]:  # KNN (STATEFUL)
+    elif method == OUTLIER_DETECTORS[1]:  # KNN
         clf = KNN(contamination=0.05)
         clf.fit(X)
         print(f"Using KNN detector (stateful, contamination={clf.contamination})")
+        get_detector = safe_detector(lambda X_data: clf.predict(X_data) == 0) # inliers are labeled 0, outliers 1
 
-        def get_keep_mask(X_data):
-            yhat = clf.predict(X_data)
-            keep_mask = (yhat == 0)
-
-            if np.sum(keep_mask) == 0:
-                print("WARNING: KNN detector removed all samples. Keeping all as fallback.")
-                return np.ones(X_data.shape[0], dtype=bool)
-            return keep_mask
-
-    elif configs['outlier_detection'] == OUTLIER_DETECTORS[2]:  # Isolation Forest (STATEFUL)
+    elif method == OUTLIER_DETECTORS[2]:  # Isolation Forest
         iso = IsolationForest(contamination=0.05, random_state=configs["random_state"])
         iso.fit(X)
         print(f"Using IsolationForest (stateful, contamination={iso.contamination})")
+        get_detector = safe_detector(lambda X_data: iso.predict(X_data) == 1) # inliers are labeled 1, outliers -1
 
-        def get_keep_mask(X_data):
-            yhat = iso.predict(X_data)
-            keep_mask = (yhat == 1)
-
-            if np.sum(keep_mask) == 0:
-                print("WARNING: IsolationForest removed all samples. Keeping all as fallback.")
-                return np.ones(X_data.shape[0], dtype=bool)
-            return keep_mask
-
-    return get_keep_mask
+    return get_detector
 
 
-def xgb_feature_importance_selector(X, y, importance_thresh=0.0001):
-    # (No changes to this function)
-    """Fits an XGBoost model and selects features based on importance threshold..."""
-    model = XGBRegressor(random_state=configs["random_state"], n_estimators=100, verbosity=0)
-    model.fit(X, y)
-    importances = model.feature_importances_
-    keep_mask = importances > importance_thresh
-    return keep_mask, importances
+class CorrelationRemover(BaseEstimator, TransformerMixin):
+    def __init__(self, threshold=0.95):
+        self.threshold = threshold
+        self.to_drop_ = None
 
-
-class FeatureSelector:
-    # (No changes to this class)
-    """Feature selection to remove irrelevant or redundant features..."""
-
-    def __init__(self, var_thresh=None, corr_thresh=None, xgb_thresh=None, print_removed_ones=False):
-        self.var_thresh = var_thresh
-        self.corr_thresh = corr_thresh
-        self.xgb_thresh = xgb_thresh
-        self.mask_ = None
-        self.print_removed_ones = print_removed_ones
-
-    def fit(self, X, y):
-        # (Omitted for brevity - no changes)
-        df_original = pd.DataFrame(X)
-        df_filtered = df_original.copy()
-        if self.var_thresh is not None:
-            df_for_var = df_filtered.copy()
-            col_means = df_for_var.mean(numeric_only=True, skipna=True)
-            df_for_var = df_for_var.fillna(col_means)
-            selector = VarianceThreshold(threshold=self.var_thresh)
-            var_mask = selector.fit(df_for_var).get_support()
-            n_removed_var = np.sum(~var_mask)
-            print(f"Variance filter (thresh={self.var_thresh}): Removed {n_removed_var} features")
-            if n_removed_var > 0 and self.print_removed_ones:
-                dropped_mask_var = ~var_mask
-                dropped_cols_var = df_original.columns[dropped_mask_var]
-                dropped_vars = selector.variances_[dropped_mask_var]
-                for col, var_val in zip(dropped_cols_var, dropped_vars):
-                    print(f"  - Column {col}: variance = {var_val:.6f}")
-            df_filtered = df_filtered.iloc[:, var_mask]
-        if self.corr_thresh is not None:
-            corr_matrix = df_filtered.corr(numeric_only=True).abs()
-            upper_triangle = corr_matrix.where(np.triu(np.ones(corr_matrix.shape), k=1).astype(bool))
-            highly_correlated_features_to_drop = [col for col in upper_triangle.columns if
-                                                  any(upper_triangle[col] > self.corr_thresh)]
-            corr_mask = ~df_filtered.columns.isin(highly_correlated_features_to_drop)
-            n_removed_corr = len(highly_correlated_features_to_drop)
-            print(f"Correlation filter (thresh={self.corr_thresh}): Removed {n_removed_corr} features")
-            if n_removed_corr > 0 and self.print_removed_ones:
-                for feat in highly_correlated_features_to_drop:
-                    max_corr_col = upper_triangle[feat].idxmax()
-                    max_corr_val = upper_triangle[feat].max()
-                    print(f"  - Column {feat}: max correlation = {max_corr_val:.4f} (with Column {max_corr_col})")
-            df_filtered = df_filtered.loc[:, corr_mask]
-        if self.xgb_thresh is not None:
-            X_for_xgb = df_filtered.values
-            xgb_mask, importances = xgb_feature_importance_selector(X_for_xgb, y, importance_thresh=self.xgb_thresh)
-            dropped_mask_xgb = ~xgb_mask
-            n_removed_xgb = np.sum(dropped_mask_xgb)
-            print(f"XGBoost filter (thresh={self.xgb_thresh}): Removed {n_removed_xgb} features")
-            if n_removed_xgb > 0 and self.print_removed_ones:
-                dropped_cols_xgb = df_filtered.columns[dropped_mask_xgb]
-                dropped_importances = importances[dropped_mask_xgb]
-                for col, imp_val in zip(dropped_cols_xgb, dropped_importances):
-                    print(f"  - Column {col}: importance = {imp_val:.6f}")
-            df_filtered = df_filtered.iloc[:, xgb_mask]
-        self.mask_ = df_original.columns.isin(df_filtered.columns)
-        print(f"✅ Selected {self.mask_.sum()} / {X.shape[1]} features "
-              f"({self.mask_.sum() / X.shape[1] * 100:.1f}%)")
+    def fit(self, X, y=None):
+        df = pd.DataFrame(X)
+        corr_matrix = df.corr(numeric_only=True).abs()
+        upper_triangle = corr_matrix.where(np.triu(np.ones(corr_matrix.shape), k=1).astype(bool))
+        self.to_drop_ = [col for col in upper_triangle.columns if any(upper_triangle[col] > self.threshold)]
         return self
 
     def transform(self, X):
-        # (No changes to this method)
-        if self.mask_ is None:
-            raise ValueError("Must call fit before transform.")
-        return X[:, self.mask_]
+        if self.to_drop_ is None:
+            raise ValueError("Must fit before transform.")
+        df = pd.DataFrame(X)
+        return df.drop(columns=self.to_drop_).values
 
 
-# === MODIFIED: fit function ===
+def feature_selection(x_train, y_train, thresh_var=0.01, thresh_corr=0.95, rf_max_feats=120, rf_n_estimators=70):
+    if hasattr(x_train, 'values'):
+        x_train = x_train.values
+        print("Converted to numpy array")
+
+    rf = RandomForestRegressor(n_estimators=rf_n_estimators, random_state=configs['random_state'], n_jobs=-1)
+    rf_selector = SelectFromModel(rf, max_features=rf_max_feats, threshold='0.1*mean')
+
+    selection = make_pipeline(
+        VarianceThreshold(threshold=thresh_var),  # low variance removal
+        CorrelationRemover(threshold=thresh_corr),  # high correlation removal
+        SelectPercentile(score_func=mutual_info_regression, percentile=24), # equivalent to KBest=200, more robust
+        rf_selector # non-linear embedded selection (RF instead of Lasso)
+    )
+    selection.fit(x_train, y_train)
+    return selection
+
+
 def fit(X, y):
     """Training of the model
+
     Parameters
     ----------
     X: Training data
@@ -219,11 +190,10 @@ def fit(X, y):
     ----------
     model: Final model for prediction
     """
-
     model_name = configs["regression_method"]
     print(f"Fitting model: {model_name}")
 
-    if model_name == "XGBRegressor":
+    if model_name == REGRESSORS[0]:  # XGBRegressor
         model = XGBRegressor(
             random_state=configs["random_state"],
             n_estimators=250,
@@ -237,146 +207,121 @@ def fit(X, y):
             learning_rate=0.05,
             verbosity=0
         )
-    elif model_name == "ExtraTreesRegressor":
-        # Using settings from your original code, but linked to config random_state
+    elif model_name == REGRESSORS[1]:  # ExtraTreesRegressor
         model = ExtraTreesRegressor(
             random_state=configs["random_state"],
             n_estimators=100,  # You can tune this
             n_jobs=-1  # Use all cores
         )
-    else:
-        raise ValueError(f"Unknown regression_method: {model_name}")
+    elif model_name == REGRESSORS[2]: # Ridge
+        # Ridge is sensitive to feature scales, so we pipeline a scaler
+        model = make_pipeline(
+            StandardScaler(),
+            Ridge(random_state=configs["random_state"])
+        )
+    elif model_name == REGRESSORS[3]: # RandomForestRegressor
+        model = RandomForestRegressor(
+            random_state=configs["random_state"],
+            n_estimators=100,  # Using same default as ExtraTrees
+            n_jobs=-1
+        )
 
     model.fit(X, y)
     return model
 
 
 def train_model(X, y, i=None):
-    # (No changes to this function)
-    """(REFACTORED, DO NOT MERGE IN MAIN) Run training pipeline..."""
+    """Run training pipeline. Returns processed data to calculate train score.
+
+    Parameters
+    ----------
+    X: Training data
+    y: Labels to learn correct prediction
+    i: current CV iteration (for model loading)
+
+    Returns
+    ----------
+    imputer: Trained imputation model
+    detector: Trained detector model
+    selection: Trained selection model
+    model: Trained prediction model
+    X: Manipulated training data
+    y: Manipulated training labels
+    """
     imputer = imputation(X, i)
-    X_imputed = imputer.transform(X)
+    X_imp = imputer.transform(X)
 
-    get_keep_mask = outlier_detection(X_imputed, y)
+    detector = outlier_detection(X_imp, y)
+    train_mask = detector(X_imp)
+    X_filt = X_imp[train_mask, :]
+    y_proc = y[train_mask]
+    print(f"Outlier detection: Kept {X_filt.shape[0]} / {X_imp.shape[0]} samples")
 
-    train_mask = get_keep_mask(X_imputed)
-    X_filtered = X_imputed[train_mask, :]
-    y_filtered = y[train_mask]
+    selection = feature_selection(X_filt, y_proc,
+        thresh_var=configs['selection']['thresh_var'],
+        thresh_corr=configs['selection']['thresh_corr']
+    )
+    X_proc = selection.transform(X_filt)
+    print(f"Selected features: {X_proc.shape[1]}")
 
-    print(f"Outlier detection: Kept {X_filtered.shape[0]} / {X_imputed.shape[0]} samples")
+    model = fit(X_proc, y_proc)
+    return imputer, detector, selection, model, X_proc, y_proc
 
-    selection = FeatureSelector(var_thresh=configs["var_thresh"], corr_thresh=configs["corr_thresh"],
-                                xgb_thresh=configs["xgb_thresh"], print_removed_ones=configs["print_removed_ones"])
-    selection.fit(X_filtered, y_filtered)
-    X_filtered_selected = selection.transform(X_filtered)
 
-    model = fit(X_filtered_selected, y_filtered)
+def run_cv_experiment(x_data, y_data):
+    """Runs a single K-fold CV with current global 'configs'.
 
-    return imputer, get_keep_mask, selection, model, X_filtered_selected, y_filtered
+    Parameters:
+    ----------
+    x_data: Features for training and validation
+    y_data: Labels for training and validation
+
+    Returns:
+    ----------
+    cv_df: A DataFrame with detailed results for each fold.
+    """
+    model_name = configs["regression_method"]
+    outlier_method = configs["outlier_detection"]
+    cv_results_list = []
+    print(f"\n--- 🚀 Running CV for: {model_name} + {outlier_method} ---")
+    folds = KFold(n_splits=configs["folds"], shuffle=True, random_state=configs["random_state"])
+
+    for i, (train_index, validation_index) in enumerate(folds.split(x_data)):
+        print(f"\n--- Fold {i} ---")
+        x_val = x_data[validation_index, :]
+        y_val = y_data[validation_index]
+        x_train = x_data[train_index, :]
+        y_train = y_data[train_index]
+
+        # pipeline to fit on training set: x_proc, y_proc are processed training data
+        imputer, detector, selection, model, x_proc, y_proc = train_model(x_train, y_train, i)
+        y_train_pred = model.predict(x_proc)
+        train_score = r2_score(y_proc, y_train_pred)
+
+        # Validation Pipeline
+        x_val_imputed = imputer.transform(x_val)
+        x_val_selected = selection.transform(x_val_imputed) # apply selection (NO outlier removal on validation data)
+        y_val_pred = model.predict(x_val_selected)
+        val_score = r2_score(y_val, y_val_pred)
+        print(f"Fold {i}: Train R² = {train_score:.4f}, Validation R² = {val_score:.4f}")
+
+        cv_results_list.append({
+            "model": model_name,
+            "outlier_method": outlier_method,
+            "fold": i,
+            "train_score": train_score,
+            "validation_score": val_score
+        })
+
+    return pd.DataFrame(cv_results_list)
 
 
 if __name__ == "__main__":
-    # Load the dataset for model training
-    x_training_data = pd.read_csv("./data/X_train.csv", skiprows=1, header=None).values[
-        :, 1:
-    ]
-    y_training_data = (
-        pd.read_csv("./data/y_train.csv", skiprows=1, header=None).values[:, 1:].ravel()
-    )
+    x_training_data = pd.read_csv("./data/X_train.csv", skiprows=1, header=None).values[:, 1:]
+    y_training_data = (pd.read_csv("./data/y_train.csv", skiprows=1, header=None).values[:, 1:].ravel())
 
-    if not FINAL_EVALUATION:
-
-        # === MODIFIED: Main testing loop ===
-
-        # 1. Initialize a list to store ALL results
-        all_results_list = []
-
-        # 2. Outer loop for regression models
-        for model_name in REGRESSION_METHODS:
-            print(f"\n==========================================")
-            print(f"   Testing Model: {model_name}")
-            print(f"==========================================")
-            configs["regression_method"] = model_name
-
-            # 3. Inner loop for outlier methods (as before)
-            for outlier_method in OUTLIER_DETECTORS:
-                print(f"\n--- 🚀 Testing Outlier Method: {outlier_method} ---")
-                configs["outlier_detection"] = outlier_method
-
-                folds = KFold(n_splits=configs["folds"], shuffle=True, random_state=configs["random_state"])
-                for i, (train_index, validation_index) in enumerate(
-                        folds.split(x_training_data)
-                ):
-                    print(f"\n--- Fold {i} ---")
-                    x_val = x_training_data[validation_index, :]
-                    y_val = y_training_data[validation_index]
-                    x_train = x_training_data[train_index, :]
-                    y_train = y_training_data[train_index]
-
-                    # Pipeline (no change)
-                    imputer, get_keep_mask, selection, model, x_train_final, y_train_final = train_model(
-                        x_train, y_train, i
-                    )
-
-                    y_train_pred = model.predict(x_train_final)
-                    train_score = r2_score(y_train_final, y_train_pred)
-
-                    x_val_imputed = imputer.transform(x_val)
-                    x_val_selected = selection.transform(x_val_imputed)
-                    y_val_pred = model.predict(x_val_selected)
-                    val_score = r2_score(y_val, y_val_pred)
-
-                    print(f"Fold {i}: Train R² = {train_score:.4f}, Validation R² = {val_score:.4f}")
-
-                    # 4. Append detailed results to the master list
-                    all_results_list.append({
-                        "model": model_name,
-                        "outlier_method": outlier_method,
-                        "fold": i,
-                        "train_score": train_score,
-                        "validation_score": val_score
-                    })
-
-        # --- Final Comparison and CSV Export ---
-        print("\n\n--- 📊 Final Performance Summary ---")
-
-        # 5. Convert list of dicts to DataFrame
-        results_df = pd.DataFrame(all_results_list)
-
-        # 6. Save all results to CSV
-        csv_filename = "all_model_results.csv"
-        results_df.to_csv(csv_filename, index=False)
-        print(f"\n✅ All results saved to '{csv_filename}'")
-
-        # 7. Print summary statistics to console
-        print("\n--- Validation R² Summary ---")
-        # Group by model and outlier method, then show stats for validation_score
-        summary_stats = results_df.groupby(['model', 'outlier_method'])['validation_score'].describe()
-        print(summary_stats)
-
-        # --- Generate boxplot (grouped by model) ---
-        fig, ax = plt.subplots(figsize=(12, 8))
-
-        # 8. Update plot to show grouped boxplots
-        sns.boxplot(data=results_df, x='outlier_method', y='validation_score', hue='model', ax=ax)
-
-        ax.set_title("Model Comparison by Outlier Method (Validation R²)")
-        ax.set_ylabel("R² Score (Validation)")
-        ax.set_xlabel("Outlier Detection Method")
-        ax.legend(title="Model")
-
-        plot_filename = "model_comparison_boxplot.png"
-        plt.savefig(plot_filename)
-        print(f"\n✅ Saved grouped boxplot to '{plot_filename}'")
-        # plt.show()
-
-    else:
-        # --- FINAL_EVALUATION = True ---
-        # This block now correctly uses the 'fit' function,
-        # which will respect the "regression_method" set in the 'configs' dict.
-        # Before running this, you should manually set your *best* combination
-        # in the 'configs' dict at the top of the file.
-
+    if RUN_MODE == RunMode.FINAL_EVALUATION:
+        # Generates submission.csv using the single configuration defined in the global 'configs' dict
         print(f"🚀 Running final evaluation pipeline with:")
         print(f"   Model: {configs['regression_method']}")
         print(f"   Outlier Detector: {configs['outlier_detection']}")
@@ -385,14 +330,81 @@ if __name__ == "__main__":
         x_train = x_training_data
         y_train = y_training_data
 
-        imputer, _, selection, model, _, _ = train_model(x_train, y_train)
-
+        # Pipeline to fit on training set
+        imputer, detector, selection, model, _, _ = train_model(x_train, y_train)
         x_test_imputed = imputer.transform(x_test)
-        x_test_selected = selection.transform(x_test_imputed)
+        x_test_selected = selection.transform(x_test_imputed) # apply feature selection, NO outlier removal
         y_test_pred = model.predict(x_test_selected)
 
-        table = pd.DataFrame(
-            {"id": np.arange(0, y_test_pred.shape[0]), "y": y_test_pred.flatten()}
-        )
+        # Save predictions to submission file
+        table = pd.DataFrame({"id": np.arange(0, y_test_pred.shape[0]), "y": y_test_pred.flatten()})
         table.to_csv("./submission.csv", index=False)
         print("\n✅ Successfully generated submission.csv")
+
+    elif RUN_MODE == RunMode.WANDB:
+        # Runs a single CV experiment (using 'configs') and logs to W&B.
+        print(f"🚀 Starting W&B run for: {configs['regression_method']} + {configs['outlier_detection']}")
+
+        with wandb.init(
+            project="AML_task1",
+            config=configs,
+            tags=["regression", configs["regression_method"], configs["outlier_detection"]],
+            name=f"regressor {configs['regression_method']}_{configs['outlier_detection']}",
+            notes=f''
+        ) as run:
+            cv_df = run_cv_experiment(x_training_data, y_training_data)
+
+            # Generate and log boxplot
+            fig, ax = plt.subplots(figsize=(11, 13))
+            sns.boxplot(data=cv_df[["train_score", "validation_score"]], ax=ax)
+            ax.set_title("Cross-Validation Results")
+            ax.set_ylabel("R² Score")
+            ax.set_xlabel("Score Type")
+            run.log({"CV_Boxplot": wandb.Image(fig)})
+            plt.close(fig)
+
+            # Store raw CV results in table
+            cv_table = wandb.Table(dataframe=cv_df)
+            run.log({"CV Results": cv_table})
+
+            # Log summary statistics
+            run.summary["mean_train_score"] = cv_df["train_score"].mean()
+            run.summary["mean_validation_score"] = cv_df["validation_score"].mean()
+            run.summary["std_train_score"] = cv_df["train_score"].std()
+            run.summary["std_validation_score"] = cv_df["validation_score"].std()
+            print("\n✅ W&B run complete.")
+
+    elif RUN_MODE == RunMode.CVRUN:
+        # Runs all combinations of models and outlier detectors locally. Saves one CSV and one plot with all results.
+        print("🚀 Starting local 'Run All' comparison...")
+        all_results_dfs = []
+
+        for model_name in REGRESSORS:
+            configs["regression_method"] = model_name  # !update global config
+
+            for outlier_method in OUTLIER_DETECTORS:
+                configs["outlier_detection"] = outlier_method  # !update global config
+                cv_df = run_cv_experiment(x_training_data, y_training_data)
+                all_results_dfs.append(cv_df)
+
+        # Comparison and csv export
+        print("\n\n--- 📊 Final Performance Summary ---")
+        results_df = pd.concat(all_results_dfs)
+        csv_filename = "all_model_results.csv"
+        results_df.to_csv(csv_filename, index=False)
+        print(f"\n✅ All results saved to '{csv_filename}'")
+        print("\n--- Validation R² Summary ---")
+        summary_stats = results_df.groupby(['model', 'outlier_method'])['validation_score'].describe()
+        print(summary_stats)
+
+        # Generate boxplot grouped by model
+        fig, ax = plt.subplots(figsize=(14, 8))
+        sns.boxplot(data=results_df, x='outlier_method', y='validation_score', hue='model', ax=ax)
+        ax.set_title("Model Comparison by Outlier Method (Validation R²)")
+        ax.set_ylabel("R² Score (Validation)")
+        ax.set_xlabel("Outlier Detection Method")
+        ax.legend(title="Model")
+        plot_filename = "model_comparison_boxplot.png"
+        plt.savefig(plot_filename)
+        print(f"\n✅ Saved grouped boxplot to '{plot_filename}'")
+        print("\n✅ Local comparison complete.")
