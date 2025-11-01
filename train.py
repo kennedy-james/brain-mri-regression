@@ -30,12 +30,16 @@ from sklearn.svm import OneClassSVM
 from sklearn.decomposition import PCA
 from sklearn.ensemble import StackingRegressor
 from sklearn.svm import SVR
+import optuna
+import json
 
 class RunMode(Enum):
     final_evaluation = auto() # produce submission file for test data
     wandb = auto() # log to wandb
     grid = auto()   # run all combinations of models and outlier detectors locally
     current_config = auto() # run single CV with current config
+    optuna_search = auto()
+    optuna_config = auto()
 
 
 class Imputer(Enum):
@@ -64,12 +68,15 @@ class Regressor(Enum):
     stacking = auto()
 
 
-RUN_MODE = RunMode.current_config
+RUN_MODE = RunMode.optuna_search
+print('Loading training data...') # optuna needs to have access to data globally
+x_training_data = pd.read_csv("./data/X_train.csv", skiprows=1, header=None).values[:, 1:]
+y_training_data = (pd.read_csv("./data/y_train.csv", skiprows=1, header=None).values[:, 1:].ravel())
 
 configs = {
     'folds': 10,
     'random_state': 42,
-    'impute_method': Imputer.knn,
+    'impute_method': Imputer.iterative,
     'knn_neighbours': 75,
     'knn_weight': 'uniform',  # possible neighbour weights for average (uniform, distance)
     'iterative_estimator': 'Ridge()',  # Iterative configuration
@@ -77,6 +84,7 @@ configs = {
     'outlier_detector': {
         'method': OutlierDetector.pca_isoforest,
         'zscore_std': 1,
+        'isoforest_contamination': 0.05,
         'pca_n_components': 2,
         'pca_svm_nu': 0.05,    # "expected amount of outliers to discard"
         'pca_svm_gamma': 0.0003, # blurriness of internal holes within clusters
@@ -173,7 +181,7 @@ def outlier_detection(X, y):
         get_detector = safe_detector(lambda X_data: clf.predict(X_data) == 0) # inliers are labeled 0, outliers 1
 
     elif method is OutlierDetector.isoforest:
-        iso = IsolationForest(contamination=0.05, random_state=configs["random_state"])
+        iso = IsolationForest(contamination=configs['outlier_detector']['isoforest_contamination'], random_state=configs["random_state"])
         iso.fit(X)
         print(f"Using IsolationForest (stateful, contamination={iso.contamination})")
         get_detector = safe_detector(lambda X_data: iso.predict(X_data) == 1) # inliers are labeled 1, outliers -1
@@ -232,7 +240,7 @@ class CorrelationRemover(BaseEstimator, TransformerMixin):
             raise ValueError("Must fit before transform.")
         df = pd.DataFrame(X)
         return df.drop(columns=self.to_drop_).values
-    
+
 class PrintShape(BaseEstimator, TransformerMixin):
     def __init__(self, message=""):
         self.message = message
@@ -246,8 +254,19 @@ class PrintShape(BaseEstimator, TransformerMixin):
         print(f"number of remaining features {self.message}: {X.shape[1]}")
         return X  # Pass through unchanged
 
+class PassthroughSelector(BaseEstimator, TransformerMixin):
+    """
+    hacky simple transformer passing data through without modification.
+    Used to bypass feature selection.
+    """
+    def fit(self, X, y=None):
+        return self # Nothing to fit
 
-def feature_selection(x_train, y_train, thresh_var=0.01, thresh_corr=0.93, rf_max_feats=250, rf_n_estimators=70):
+    def transform(self, X):
+        return X # Just return the data
+
+
+def feature_selection(x_train, y_train, thresh_var=0.01, thresh_corr=0.95, rf_max_feats=120, rf_n_estimators=70):
     if hasattr(x_train, 'values'):
         x_train = x_train.values
         print("Converted to numpy array")
@@ -284,19 +303,25 @@ def fit(X, y):
     print(f"Fitting model: {model_name}")
 
     if model_name is Regressor.xgb:
-        model = XGBRegressor(
-            random_state=configs["random_state"],
-            n_estimators=250,
-            max_depth=4,
-            min_child_weight=10,
-            gamma=0.5,
-            subsample=0.7,
-            colsample_bytree=0.7,
-            reg_alpha=0.3,
-            reg_lambda=1.5,
-            learning_rate=0.05,
-            verbosity=0
-        )
+        # check if optuna provided set of tuned params
+        if 'regression_params' in configs:
+            print("Using tuned XGBoost parameters from Optuna...")
+            model = XGBRegressor(**configs['regression_params'])
+        else:
+            # This is the original, hard-coded XGBoost
+            model = XGBRegressor(
+                random_state=configs["random_state"],
+                n_estimators=250,
+                max_depth=4,
+                min_child_weight=10,
+                gamma=0.5,
+                subsample=0.7,
+                colsample_bytree=0.7,
+                reg_alpha=0.3,
+                reg_lambda=1.5,
+                learning_rate=0.05,
+                verbosity=0
+            )
     elif model_name is Regressor.extra_trees:
         model = ExtraTreesRegressor(
             random_state=configs["random_state"],
@@ -354,7 +379,81 @@ def fit(X, y):
         )
 
     model.fit(X, y)
+
+    if 'regression_params' in configs:
+        del configs['regression_params']  # clean up tuned params to not break next run
+
     return model
+
+
+def objective(trial):
+    """
+    Main function for Optuna hyperparam optimization.
+    Suggests hyperparameters, updates global 'configs', and returns validation score for optuna to optimize.
+
+    Parameters
+    ----------
+    trial: An Optuna trial object for suggesting hyperparameters.
+
+    Returns
+    ----------
+    mean_val_score: Mean validation R² score across CV folds.
+    """
+    impute_method_name = trial.suggest_categorical(
+        'impute_method', [Imputer.knn.name, Imputer.iterative.name]
+    )
+    configs['impute_method'] = Imputer[impute_method_name]
+
+    outlier_method_name = trial.suggest_categorical(
+        'outlier_method_name',
+        [OutlierDetector.isoforest.name, OutlierDetector.pca_svm.name, OutlierDetector.pca_isoforest.name]
+    )
+    configs['outlier_detector']['method'] = OutlierDetector[outlier_method_name]
+
+    # conditional hyperparameters based on chosen outlier method
+    if OutlierDetector[outlier_method_name] is OutlierDetector.pca_isoforest:
+        # CRITICAL FIX: Try a useful range of components, not 2!
+        configs['outlier_detector']['pca_n_components'] = trial.suggest_int(
+            'pca_n_components', low=10, high=50
+        )
+        configs['outlier_detector']['pca_isoforest_contamination'] = trial.suggest_float(
+            'pca_isoforest_contamination', low=0.01, high=0.1
+        )
+    elif OutlierDetector[outlier_method_name] is OutlierDetector.isoforest:
+        configs['outlier_detector']['isoforest_contamination'] = trial.suggest_float(
+            'isoforest_contamination', low=0.01, high=0.1
+        )
+
+    # tune XGBoost
+    configs['regression_method'] = Regressor.xgb
+
+    # We create a *new* key for tuned params so we don't break other models
+    configs['regression_params'] = {
+        'random_state': configs["random_state"],
+        'n_estimators': trial.suggest_int('n_estimators', low=100, high=500),
+        'max_depth': trial.suggest_int('max_depth', low=3, high=10),
+        'min_child_weight': trial.suggest_int('min_child_weight', low=1, high=20),
+        'gamma': trial.suggest_float('gamma', low=0.0, high=3.0),
+        'subsample': trial.suggest_float('subsample', low=0.5, high=1.0),
+        'colsample_bytree': trial.suggest_float('colsample_bytree', low=0.1, high=0.5),
+        'reg_alpha': trial.suggest_float('reg_alpha', low=0.0, high=2.0),
+        'reg_lambda': trial.suggest_float('reg_lambda', low=1.5, high=5.0),
+        'learning_rate': trial.suggest_float('learning_rate', low=0.01, high=0.1, log=True),
+        'verbosity': 0
+    }
+
+    configs['folds'] = 3    # use few folds for faster tuning.
+
+    # We use the existing helper function, which reads from the global 'configs'
+    try:
+        cv_df = run_cv_experiment(x_training_data, y_training_data)
+        mean_val_score = cv_df['validation_score'].mean()
+    except Exception as e:
+        print(f"--- ❌ TRIAL FAILED: {e} ---")
+        # Tell Optuna this trial failed (e.g., bad hyperparams)
+        return -1.0
+
+    return mean_val_score
 
 
 def train_model(X, y, i=None):
@@ -384,12 +483,20 @@ def train_model(X, y, i=None):
     y_proc = y[train_mask]
     print(f"Outlier detection: Kept {X_filt.shape[0]} / {X_imp.shape[0]} samples")
 
-    selection = feature_selection(X_filt, y_proc,
-        thresh_var=configs['selection']['thresh_var'],
-        thresh_corr=configs['selection']['thresh_corr']
-    )
-    X_proc = selection.transform(X_filt)
-    print(f"Selected features: {X_proc.shape[1]}")
+    model_name = configs["regression_method"]
+    if RUN_MODE in [RunMode.optuna_config, RUN_MODE.optuna_search]  and model_name in [Regressor.xgb, Regressor.extra_trees, Regressor.random_forest_regressor]:
+        print("Using PassthroughSelector (skipping feature selection for tree-based model).")
+        selection = PassthroughSelector()
+        X_proc = selection.fit_transform(X_filt)
+        print(f"Selected features: {X_proc.shape[1]} (all)")
+    else:
+        print("Running feature_selection pipeline for non-tree model...")
+        selection = feature_selection(X_filt, y_proc,
+            thresh_var=configs['selection']['thresh_var'],
+            thresh_corr=configs['selection']['thresh_corr']
+        )
+        X_proc = selection.transform(X_filt)
+        print(f"Selected features: {X_proc.shape[1]}")
 
     model = fit(X_proc, y_proc)
     return imputer, detector, selection, model, X_proc, y_proc
@@ -525,9 +632,55 @@ def save_results_locally(results_df, is_grouped_run):
     print("\n✅ Local run complete.")
 
 
+def load_best_params(json_file="best_params.json"):
+    """Loads the best parameters from the Optuna JSON file.
+
+    Parameters:
+    ----------
+    json_file: Path to the JSON file containing best parameters.
+
+    Returns:
+    ----------
+    None
+    """
+    try:
+        with open(json_file, "r") as f:
+            best_params = json.load(f)
+            print(f"✅ Successfully loaded best parameters from {json_file}")
+
+            configs['impute_method'] = Imputer[best_params['impute_method']]
+            outlier_method = OutlierDetector[best_params['outlier_method_name']]
+            configs['outlier_detector']['method'] = outlier_method
+
+            # set outlier params if necessary
+            if outlier_method == OutlierDetector.pca_isoforest:
+                configs['outlier_detector']['pca_n_components'] = best_params['pca_n_components']
+                configs['outlier_detector']['pca_isoforest_contamination'] = best_params['pca_isoforest_contamination']
+
+            # set regression params
+            configs['regression_method'] = Regressor.xgb  # tuned for XGB
+            configs['regression_params'] = {
+                'random_state': configs["random_state"],
+                'n_estimators': best_params['n_estimators'],
+                'max_depth': best_params['max_depth'],
+                'min_child_weight': best_params['min_child_weight'],
+                'gamma': best_params['gamma'],
+                'subsample': best_params['subsample'],
+                'colsample_bytree': best_params['colsample_bytree'],
+                'reg_alpha': best_params['reg_alpha'],
+                'reg_lambda': best_params['reg_lambda'],
+                'learning_rate': best_params['learning_rate'],
+                'verbosity': 0
+            }
+
+    except FileNotFoundError:
+        print(f"⚠️ WARNING: {json_file} not found. Using default configs.")
+    except Exception as e:
+        print(f"⚠️ ERROR loading {json_file}: {e}. Using default configs.")
+
+
+
 if __name__ == "__main__":
-    x_training_data = pd.read_csv("./data/X_train.csv", skiprows=1, header=None).values[:, 1:]
-    y_training_data = (pd.read_csv("./data/y_train.csv", skiprows=1, header=None).values[:, 1:].ravel())
 
     if RUN_MODE == RunMode.final_evaluation:
         # Generates submission.csv using the single configuration defined in the global 'configs' dict
@@ -583,3 +736,30 @@ if __name__ == "__main__":
 
         results_df = pd.concat(all_results_dfs)
         save_results_locally(results_df, is_grouped_run=True)
+
+    elif RUN_MODE is RunMode.optuna_search:
+        print("🚀 Starting Optuna hyperparameter search...")
+        storage_name = 'sqlite:///optuna_study.db'
+        study_name = 'aml-project1'
+
+        study = optuna.create_study(storage=storage_name, study_name=study_name, direction='maximize', load_if_exists=True)
+        # run 50 different trials. may take long
+        study.optimize(objective, n_trials=50)
+
+        print("\n\n--- 🏆 Optuna Search Complete ---")
+        print(f'   study: {study.study_name}')
+        print(f"Best Validation R²: {study.best_value:.4f}")
+        print("Best Parameters:")
+        print(study.best_params)
+
+        # Save best params to a file so you can use them later
+        with open("best_params.json", "w") as f:
+            json.dump(study.best_params, f, indent=4)
+        print("\n✅ Best parameters saved to best_params.json")
+
+    elif RUN_MODE is RunMode.optuna_config:
+        load_best_params(json_file='suggested_params.json')
+        print(
+            f"🚀 Starting single local CV run for: {configs['regression_method'].name} + {configs['outlier_detector']['method'].name}")
+        cv_df = run_cv_experiment(x_training_data, y_training_data)
+        save_results_locally(cv_df, is_grouped_run=False)
