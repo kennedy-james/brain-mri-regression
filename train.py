@@ -60,12 +60,12 @@ class Regressor(Enum):
     RANDOM_FOREST = 'RandomForestRegressor'
 
 
-RUN_MODE = RunMode.CURRENT_CONFIG
+RUN_MODE = RunMode.GRID
 
 configs = {
     'folds': 10,
     'random_state': 42,
-    'impute_method': Imputer.ITERATIVE,
+    'impute_method': Imputer.MEAN,
     'knn_neighbours': 75,
     'knn_weight': 'uniform',  # possible neighbour weights for average (uniform, distance)
     'iterative_estimator': 'Ridge()',  # Iterative configuration
@@ -97,7 +97,7 @@ def imputation(X, i):
     """
     method = configs["impute_method"]
     if method in [Imputer.MEAN, Imputer.MEDIAN, Imputer.MOST_FREQUENT]:
-        imputer = SimpleImputer(strategy=configs["impute_method"])
+        imputer = SimpleImputer(strategy=configs["impute_method"].value)
         imputer.fit(X)
     elif method is Imputer.KNN:
         scaler = StandardScaler()
@@ -204,6 +204,9 @@ def outlier_detection(X, y):
         print(f"Using PCA+IsolationForest detector (stateful, n_components={configs['outlier_detector']['pca_n_components']}, contamination={configs['outlier_detector']['pca_isoforest_contamination']})")
         pca_isoforest_pipeline.fit(X)
         get_detector = safe_detector(lambda X_data: pca_isoforest_pipeline.predict(X_data) == 1) # inliers 1, outliers -1
+
+    else:
+        raise ValueError(f"Unknown outlier detection method: {method}")
 
     return get_detector
 
@@ -516,9 +519,10 @@ if __name__ == "__main__":
         for model_name in Regressor:
             configs["regression_method"] = model_name  # !update global config
 
-            for outlier_method in OutlierDetector:
-                configs["outlier_detection"] = outlier_method  # !update global config
-                cv_df = run_cv_experiment(x_training_data, y_training_data)
-                all_results_dfs.append(cv_df)
+            # for outlier_method in OutlierDetector:
+            # configs["outlier_detection"] = outlier_method  # !update global config
+            cv_df = run_cv_experiment(x_training_data, y_training_data)
+            all_results_dfs.append(cv_df)
 
         results_df = pd.concat(all_results_dfs)
+        save_results_locally(results_df, is_grouped_run=True)
