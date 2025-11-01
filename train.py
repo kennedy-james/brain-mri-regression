@@ -37,27 +37,28 @@ class RunMode(Enum):
 
 
 class Imputer(Enum):
-    MEAN = 'mean'
-    MEDIAN = 'median'
-    MOST_FREQUENT = 'most_frequent'
-    KNN = 'KNN'
-    ITERATIVE = 'iterative'
+    mean = auto()
+    median = auto()
+    most_frequent = auto()
+    knn = auto()
+    iterative = auto()
 
 
 class OutlierDetector(Enum):
-    ZSCORE = 'zscore'
-    KNN = 'knn'
-    ISOFOREST = 'isoForest'
-    SVM = 'svm'
-    PCA_SVM = 'pca_svm'
-    PCA_ISOFOREST = 'pca_isoforest'
+    zscore = auto()
+    knn = auto()
+    isoforest = auto()
+    svm = auto()
+    pca_svm = auto()
+    pca_isoforest = auto()
+
 
 
 class Regressor(Enum):
-    XGB = 'XGBRegressor'
-    EXTRA_TREES = 'ExtraTreesRegressor'
-    RIDGE = 'Ridge'
-    RANDOM_FOREST = 'RandomForestRegressor'
+    XGBRegressor = auto()
+    ExtraTreesRegressor = auto()
+    Ridge = auto()
+    RandomForestRegressor = auto()
 
 
 RUN_MODE = RunMode.GRID
@@ -65,20 +66,20 @@ RUN_MODE = RunMode.GRID
 configs = {
     'folds': 10,
     'random_state': 42,
-    'impute_method': Imputer.MEAN,
+    'impute_method': Imputer.mean,
     'knn_neighbours': 75,
     'knn_weight': 'uniform',  # possible neighbour weights for average (uniform, distance)
     'iterative_estimator': 'Ridge()',  # Iterative configuration
     'iterative_iter': 1,  # Iterative configuration
     'outlier_detector': {
-        'method': OutlierDetector.PCA_ISOFOREST,
+        'method': OutlierDetector.pca_isoforest,
         'zscore_std': 1,
         'pca_n_components': 2,
         'pca_svm_nu': 0.05,    # "expected amount of outliers to discard"
         'pca_svm_gamma': 0.0003, # blurriness of internal holes within clusters
         'pca_isoforest_contamination': 0.045, # proportion of outliers
     },
-    'regression_method': Regressor.XGB,
+    'regression_method': Regressor.XGBRegressor,
     'selection': {'thresh_var': 0.01, 'thresh_corr': 0.95},
 }
 
@@ -96,15 +97,15 @@ def imputation(X, i):
     imputer: Trained imputer for imputing new data points
     """
     method = configs["impute_method"]
-    if method in [Imputer.MEAN, Imputer.MEDIAN, Imputer.MOST_FREQUENT]:
-        imputer = SimpleImputer(strategy=configs["impute_method"].value)
+    if method in [Imputer.mean, Imputer.median, Imputer.most_frequent]:
+        imputer = SimpleImputer(strategy=configs["impute_method"].name)
         imputer.fit(X)
-    elif method is Imputer.KNN:
+    elif method is Imputer.knn:
         scaler = StandardScaler()
         knn_imputer = KNNImputer(n_neighbors=configs["knn_neighbours"], weights=configs["knn_weight"])
         imputer = pipeline.make_pipeline(scaler, knn_imputer)
         imputer.fit(X)
-    elif method is Imputer.ITERATIVE: # iterative imputer
+    elif method is Imputer.iterative: # iterative imputer
         loadable_file = f'./models/imputers/{configs["iterative_estimator"].split("(")[0]}{configs["iterative_iter"]}_{i}.pkl'
         if i is not None and os.path.isfile(loadable_file):
             imputer = joblib.load(loadable_file)
@@ -149,7 +150,7 @@ def outlier_detection(X, y):
         return wrapped
 
     method = configs['outlier_detector']['method']
-    if method is OutlierDetector.ZSCORE:  # z-score
+    if method is OutlierDetector.zscore:
         threshold = configs['outlier_detector']['zscore_std'] # std devs
         print(f"Using z-score detector (stateful, mean-based, threshold={threshold})")
         mean_train = np.nanmean(X, axis=0)
@@ -162,26 +163,26 @@ def outlier_detection(X, y):
 
         get_detector = safe_detector(predict_fn)
 
-    elif method is OutlierDetector.KNN:  # KNN
+    elif method is OutlierDetector.knn:
         clf = KNN(contamination=0.05)
         clf.fit(X)
         print(f"Using KNN detector (stateful, contamination={clf.contamination})")
         get_detector = safe_detector(lambda X_data: clf.predict(X_data) == 0) # inliers are labeled 0, outliers 1
 
-    elif method is OutlierDetector.ISOFOREST:  # Isolation Forest
+    elif method is OutlierDetector.isoforest:
         iso = IsolationForest(contamination=0.05, random_state=configs["random_state"])
         iso.fit(X)
         print(f"Using IsolationForest (stateful, contamination={iso.contamination})")
         get_detector = safe_detector(lambda X_data: iso.predict(X_data) == 1) # inliers are labeled 1, outliers -1
 
-    elif method is OutlierDetector.SVM:  # One-Class SVM
+    elif method is OutlierDetector.svm:  # One-Class SVM
         # nu ~ contamination, upper bound on fraction of training errors and lower bound of fraction of support vectors.
         clf = OneClassSVM(nu=0.05, kernel='rbf', gamma='scale') # nu in [0, 0.5]
         clf.fit(X)
         print(f"Using One-Class SVM (stateful, nu={clf.nu})")
         get_detector = safe_detector(lambda X_data: clf.predict(X_data) == 1) # inliers 1, outliers -1
 
-    elif method is OutlierDetector.PCA_SVM:  # PCA + SVM
+    elif method is OutlierDetector.pca_svm:
         # scale data, pca, svm on low-dim representation
         n_components_pca = 2  # hyperparam
         pca_svm_pipeline = make_pipeline(
@@ -194,7 +195,7 @@ def outlier_detection(X, y):
         pca_svm_pipeline.fit(X)
         get_detector = safe_detector(lambda X_data: pca_svm_pipeline.predict(X_data) == 1) # inliers 1, outliers -1
 
-    elif method is OutlierDetector.PCA_ISOFOREST:  # PCA + Isolation Forest
+    elif method is OutlierDetector.pca_isoforest:  # PCA + Isolation Forest
         # IsoForest is not sensitive to scale, so StandardScaler isn't  strictly required for the model, but for PCA.
         pca_isoforest_pipeline = make_pipeline(
             StandardScaler(),
@@ -263,7 +264,7 @@ def fit(X, y):
     model_name = configs["regression_method"]
     print(f"Fitting model: {model_name}")
 
-    if model_name is Regressor.XGB:
+    if model_name is Regressor.XGBRegressor:
         model = XGBRegressor(
             random_state=configs["random_state"],
             n_estimators=250,
@@ -277,19 +278,19 @@ def fit(X, y):
             learning_rate=0.05,
             verbosity=0
         )
-    elif model_name is Regressor.EXTRA_TREES:
+    elif model_name is Regressor.ExtraTreesRegressor:
         model = ExtraTreesRegressor(
             random_state=configs["random_state"],
             n_estimators=100,  # You can tune this
             n_jobs=-1  # Use all cores
         )
-    elif model_name is Regressor.RIDGE:
+    elif model_name is Regressor.Ridge:
         # Ridge is sensitive to feature scales, so we pipeline a scaler
         model = make_pipeline(
             StandardScaler(),
             Ridge(random_state=configs["random_state"])
         )
-    elif model_name is Regressor.RANDOM_FOREST:
+    elif model_name is Regressor.RandomForestRegressor:
         model = RandomForestRegressor(
             random_state=configs["random_state"],
             n_estimators=100,  # Using same default as ExtraTrees
@@ -353,7 +354,7 @@ def run_cv_experiment(x_data, y_data):
     model_name = configs["regression_method"]
     outlier_method = configs["outlier_detector"]['method']
     cv_results_list = []
-    print(f"\n--- 🚀 Running CV for: {model_name.value} + {outlier_method.value} ---")
+    print(f"\n--- 🚀 Running CV for: {model_name.name} + {outlier_method.name} ---")
     folds = KFold(n_splits=configs["folds"], shuffle=True, random_state=configs["random_state"])
 
     for i, (train_index, validation_index) in enumerate(folds.split(x_data)):
@@ -376,8 +377,8 @@ def run_cv_experiment(x_data, y_data):
         print(f"Fold {i}: Train R² = {train_score:.4f}, Validation R² = {val_score:.4f}")
 
         cv_results_list.append({
-            "model": model_name.value,
-            "outlier_method": outlier_method.value,
+            "model": model_name.name,
+            "outlier_method": outlier_method.name,
             "fold": i,
             "train_score": train_score,
             "validation_score": val_score
@@ -459,7 +460,7 @@ def save_results_locally(results_df, is_grouped_run):
         plot_filename = "cv_run_boxplot_all.png"
     else:
         sns.boxplot(data=results_df[["train_score", "validation_score"]], ax=ax)
-        ax.set_title(f"CV Results: {configs['regression_method'].value} + {configs['outlier_detector']['method'].value}")
+        ax.set_title(f"CV Results: {configs['regression_method'].name} + {configs['outlier_detector']['method'].name}")
         ax.set_xlabel("Score Type")
 
     ax.set_ylabel("R² Score")
@@ -475,8 +476,8 @@ if __name__ == "__main__":
     if RUN_MODE == RunMode.FINAL_EVALUATION:
         # Generates submission.csv using the single configuration defined in the global 'configs' dict
         print(f"🚀 Running final evaluation pipeline with:")
-        print(f"   Model: {configs['regression_method'].value}")
-        print(f"   Outlier Detector: {configs['outlier_detection'].value}")
+        print(f"   Model: {configs['regression_method'].name}")
+        print(f"   Outlier Detector: {configs['outlier_detection'].name}")
 
         x_test = pd.read_csv("./data/X_test.csv", skiprows=1, header=None).values[:, 1:]
         x_train = x_training_data
@@ -499,15 +500,15 @@ if __name__ == "__main__":
         with wandb.init(
             project="AML_task1",
             config=configs,
-            tags=["regression", configs["regression_method"].value, configs["outlier_detection"].value],
-            name=f"regressor {configs['regression_method'].value}_{configs['outlier_detection'].value}",
+            tags=["regression", configs["regression_method"].name, configs["outlier_detection"].name],
+            name=f"regressor {configs['regression_method'].name}_{configs['outlier_detection'].name}",
             notes=f''
         ) as run:
             cv_df = run_cv_experiment(x_training_data, y_training_data)
             log_results_to_wandb(cv_df, run)
 
     elif RUN_MODE == RunMode.CURRENT_CONFIG:
-        print(f"🚀 Starting single local CV run for: {configs['regression_method'].value} + {configs['outlier_detector']['method'].value}")
+        print(f"🚀 Starting single local CV run for: {configs['regression_method'].name} + {configs['outlier_detector']['method'].name}")
         cv_df = run_cv_experiment(x_training_data, y_training_data)
         save_results_locally(cv_df, is_grouped_run=False)  # Use the helper
 
