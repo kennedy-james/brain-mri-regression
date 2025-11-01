@@ -370,94 +370,71 @@ def fit(X, y):
 
     return model
 
-
 def objective(trial):
     """
     Main function for Optuna hyperparam optimization.
-    Suggests hyperparameters, updates global 'configs', and returns validation score for optuna to optimize.
-
-    Parameters
-    ----------
-    trial: An Optuna trial object for suggesting hyperparameters.
-
-    Returns
-    ----------
-    mean_val_score: Mean validation R² score across CV folds.
+    This new version tunes the *robust, full-feature* tree-based pipeline.
     """
+
+    # --- 1. Tune Pipeline Steps ---
     impute_method_name = trial.suggest_categorical(
-        'impute_method', [Imputer.knn.name, Imputer.iterative.name]
+        'impute_method', ['knn', 'iterative']
     )
     configs['impute_method'] = Imputer[impute_method_name]
 
+    # We will only tune the full-data, robust outlier detectors
     outlier_method_name = trial.suggest_categorical(
-        'outlier_method_name',
-        [OutlierDetector.isoforest.name, OutlierDetector.pca_svm.name, OutlierDetector.pca_isoforest.name]
+        'outlier_method_name', ['isoforest', 'zscore']
     )
     configs['outlier_detector']['method'] = OutlierDetector[outlier_method_name]
 
-    # conditional hyperparameters based on chosen outlier method
-    if OutlierDetector[outlier_method_name] is OutlierDetector.pca_isoforest:
-        # CRITICAL FIX: Try a useful range of components, not 2!
-        configs['outlier_detector']['pca_n_components'] = trial.suggest_int(
-            'pca_n_components', low=10, high=50
-        )
-        configs['outlier_detector']['pca_isoforest_contamination'] = trial.suggest_float(
-            'pca_isoforest_contamination', low=0.01, high=0.1
-        )
-    elif OutlierDetector[outlier_method_name] is OutlierDetector.isoforest:
+    # --- 2. Tune Pipeline Hyperparameters (Conditional) ---
+    if outlier_method_name == 'isoforest':
+        # Note: We are tuning the correct contamination parameter now
         configs['outlier_detector']['isoforest_contamination'] = trial.suggest_float(
             'isoforest_contamination', low=0.01, high=0.1
         )
+    elif outlier_method_name == 'zscore':
+        configs['outlier_detector']['zscore_std'] = trial.suggest_float(
+            'zscore_std', low=1.0, high=2.5
+        )
 
-    # tune XGBoost
+    # --- 3. Tune Model (XGBoost) ---
+    # We hard-code the regressor, which will trigger the PassthroughSelector
     configs['regression_method'] = Regressor.xgb
 
-    # We create a *new* key for tuned params so we don't break other models
+    # Tune XGBoost parameters for a HIGH-DIMENSIONAL (832 features) dataset
     configs['regression_params'] = {
         'random_state': configs["random_state"],
         'n_estimators': trial.suggest_int('n_estimators', low=100, high=500),
         'max_depth': trial.suggest_int('max_depth', low=3, high=10),
         'min_child_weight': trial.suggest_int('min_child_weight', low=1, high=20),
         'gamma': trial.suggest_float('gamma', low=0.0, high=3.0),
-        'subsample': trial.suggest_float('subsample', low=0.5, high=1.0),
+        'subsample': trial.suggest_float('subsample', low=0.6, high=1.0),
         'colsample_bytree': trial.suggest_float('colsample_bytree', low=0.1, high=0.5),
+        # CRITICAL: Use FEWER features per tree
         'reg_alpha': trial.suggest_float('reg_alpha', low=0.0, high=2.0),
-        'reg_lambda': trial.suggest_float('reg_lambda', low=1.5, high=5.0),
+        'reg_lambda': trial.suggest_float('reg_lambda', low=1.0, high=5.0),  # Higher L2 for high-D
         'learning_rate': trial.suggest_float('learning_rate', low=0.01, high=0.1, log=True),
         'verbosity': 0
     }
 
-    configs['folds'] = 3    # use few folds for faster tuning.
+    # --- 4. Run the Experiment ---
+    configs['folds'] = 3  # use fewer folds for faster tuning.
 
-    # We use the existing helper function, which reads from the global 'configs'
     try:
         cv_df = run_cv_experiment(x_training_data, y_training_data)
         mean_val_score = cv_df['validation_score'].mean()
     except Exception as e:
         print(f"--- ❌ TRIAL FAILED: {e} ---")
-        # Tell Optuna this trial failed (e.g., bad hyperparams)
-        return -1.0
+        return -1.0  # Return a very bad score
 
     return mean_val_score
 
 
 def train_model(X, y, i=None):
     """Run training pipeline. Returns processed data to calculate train score.
-
-    Parameters
-    ----------
-    X: Training data
-    y: Labels to learn correct prediction
-    i: current CV iteration (for model loading)
-
-    Returns
-    ----------
-    imputer: Trained imputation model
-    detector: Trained detector model
-    selection: Trained selection model
-    model: Trained prediction model
-    X: Manipulated training data
-    y: Manipulated training labels
+    ...
     """
     imputer = imputation(X, i)
     X_imp = imputer.transform(X)
@@ -468,13 +445,16 @@ def train_model(X, y, i=None):
     y_proc = y[train_mask]
     print(f"Outlier detection: Kept {X_filt.shape[0]} / {X_imp.shape[0]} samples")
 
+    # === THIS IS THE FIX ===
+    # The logic is now simple: if it's a tree model, skip selection.
     model_name = configs["regression_method"]
-    if RUN_MODE in [RunMode.optuna_config, RUN_MODE.optuna_search]  and model_name in [Regressor.xgb, Regressor.extra_trees, Regressor.random_forest_regressor]:
+    if model_name in [Regressor.xgb, Regressor.extra_trees, Regressor.random_forest_regressor]:
         print("Using PassthroughSelector (skipping feature selection for tree-based model).")
         selection = PassthroughSelector()
         X_proc = selection.fit_transform(X_filt)
         print(f"Selected features: {X_proc.shape[1]} (all)")
     else:
+        # This will now correctly run for Ridge or Stacking
         print("Running feature_selection pipeline for non-tree model...")
         selection = feature_selection(X_filt, y_proc,
             thresh_var=configs['selection']['thresh_var'],
@@ -482,6 +462,7 @@ def train_model(X, y, i=None):
         )
         X_proc = selection.transform(X_filt)
         print(f"Selected features: {X_proc.shape[1]}")
+    # =======================
 
     model = fit(X_proc, y_proc)
     return imputer, detector, selection, model, X_proc, y_proc
@@ -729,7 +710,7 @@ if __name__ == "__main__":
 
         study = optuna.create_study(storage=storage_name, study_name=study_name, direction='maximize', load_if_exists=True)
         # run 50 different trials. may take long
-        study.optimize(objective, n_trials=50)
+        study.optimize(objective, n_trials=75)
 
         print("\n\n--- 🏆 Optuna Search Complete ---")
         print(f'   study: {study.study_name}')
