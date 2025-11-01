@@ -26,30 +26,59 @@ from sklearn.pipeline import make_pipeline
 from enum import Enum, auto
 from pyod.models.knn import KNN
 from sklearn.ensemble import IsolationForest
-
+from sklearn.svm import OneClassSVM
+from sklearn.decomposition import PCA
 
 class RunMode(Enum):
     FINAL_EVALUATION = auto() # produce submission file for test data
     WANDB = auto() # log to wandb
-    CVRUN = auto()
+    GRID = auto()   # run all combinations of models and outlier detectors locally
+    CURRENT_CONFIG = auto() # run single CV with current config
 
-RUN_MODE = RunMode.CVRUN
 
-# Reproducible dictionary defining experiment
-IMPUTERS = ['mean', 'median', 'most_frequent', 'KNN', 'iterative']
-OUTLIER_DETECTORS = ['zscore', 'knn', 'isolationForest']
-REGRESSORS = ['XGBRegressor','ExtraTreesRegressor', 'Ridge', 'RandomForestRegressor']
+class Imputer(Enum):
+    MEAN = 'mean'
+    MEDIAN = 'median'
+    MOST_FREQUENT = 'most_frequent'
+    KNN = 'KNN'
+    ITERATIVE = 'iterative'
+
+
+class OutlierDetector(Enum):
+    ZSCORE = 'zscore'
+    KNN = 'knn'
+    ISOFOREST = 'isoForest'
+    SVM = 'svm'
+    PCA_SVM = 'pca_svm'
+    PCA_ISOFOREST = 'pca_isoforest'
+
+
+class Regressor(Enum):
+    XGB = 'XGBRegressor'
+    EXTRA_TREES = 'ExtraTreesRegressor'
+    RIDGE = 'Ridge'
+    RANDOM_FOREST = 'RandomForestRegressor'
+
+
+RUN_MODE = RunMode.CURRENT_CONFIG
 
 configs = {
     'folds': 10,
     'random_state': 42,
-    'impute_method': IMPUTERS[4],
+    'impute_method': Imputer.ITERATIVE,
     'knn_neighbours': 75,
     'knn_weight': 'uniform',  # possible neighbour weights for average (uniform, distance)
     'iterative_estimator': 'Ridge()',  # Iterative configuration
     'iterative_iter': 1,  # Iterative configuration
-    'outlier_detection': OUTLIER_DETECTORS[0],
-    'regression_method': REGRESSORS[0],
+    'outlier_detector': {
+        'method': OutlierDetector.PCA_ISOFOREST,
+        'zscore_std': 1,
+        'pca_n_components': 2,
+        'pca_svm_nu': 0.05,    # "expected amount of outliers to discard"
+        'pca_svm_gamma': 0.0003, # blurriness of internal holes within clusters
+        'pca_isoforest_contamination': 0.045, # proportion of outliers
+    },
+    'regression_method': Regressor.XGB,
     'selection': {'thresh_var': 0.01, 'thresh_corr': 0.95},
 }
 
@@ -67,15 +96,15 @@ def imputation(X, i):
     imputer: Trained imputer for imputing new data points
     """
     method = configs["impute_method"]
-    if method in IMPUTERS[:3]: # mean, median, most_frequent
+    if method in [Imputer.MEAN, Imputer.MEDIAN, Imputer.MOST_FREQUENT]:
         imputer = SimpleImputer(strategy=configs["impute_method"])
         imputer.fit(X)
-    elif method == IMPUTERS[3]: # KNN
+    elif method is Imputer.KNN:
         scaler = StandardScaler()
         knn_imputer = KNNImputer(n_neighbors=configs["knn_neighbours"], weights=configs["knn_weight"])
         imputer = pipeline.make_pipeline(scaler, knn_imputer)
         imputer.fit(X)
-    elif method == IMPUTERS[4]: # iterative imputer
+    elif method is Imputer.ITERATIVE: # iterative imputer
         loadable_file = f'./models/imputers/{configs["iterative_estimator"].split("(")[0]}{configs["iterative_iter"]}_{i}.pkl'
         if i is not None and os.path.isfile(loadable_file):
             imputer = joblib.load(loadable_file)
@@ -105,16 +134,23 @@ def outlier_detection(X, y):
     def safe_detector(predict_fn):
         def wrapped(X_data):
             detector = predict_fn(X_data)
-            if np.sum(detector) == 0:
+            num_total = X_data.shape[0]
+            num_inliers = np.sum(detector)
+            num_outliers = num_total - num_inliers
+
+            if num_inliers == 0:
                 print(f"WARNING: {method} removed all samples. Keeping all as fallback.")
                 return np.ones(X_data.shape[0], dtype=bool)
+
+            if X_data.shape[0] == X.shape[0]:
+                print(f"INFO: {method} (on train data) found {num_outliers} outliers. Keeping {num_inliers} / {num_total} samples.")
             return detector
 
         return wrapped
 
-    method = configs['outlier_detection']
-    if method == OUTLIER_DETECTORS[0]:  # z-score
-        threshold = 3 # std devs
+    method = configs['outlier_detector']['method']
+    if method is OutlierDetector.ZSCORE:  # z-score
+        threshold = configs['outlier_detector']['zscore_std'] # std devs
         print(f"Using z-score detector (stateful, mean-based, threshold={threshold})")
         mean_train = np.nanmean(X, axis=0)
         std_train = np.nanstd(X, axis=0)
@@ -126,17 +162,48 @@ def outlier_detection(X, y):
 
         get_detector = safe_detector(predict_fn)
 
-    elif method == OUTLIER_DETECTORS[1]:  # KNN
+    elif method is OutlierDetector.KNN:  # KNN
         clf = KNN(contamination=0.05)
         clf.fit(X)
         print(f"Using KNN detector (stateful, contamination={clf.contamination})")
         get_detector = safe_detector(lambda X_data: clf.predict(X_data) == 0) # inliers are labeled 0, outliers 1
 
-    elif method == OUTLIER_DETECTORS[2]:  # Isolation Forest
+    elif method is OutlierDetector.ISOFOREST:  # Isolation Forest
         iso = IsolationForest(contamination=0.05, random_state=configs["random_state"])
         iso.fit(X)
         print(f"Using IsolationForest (stateful, contamination={iso.contamination})")
         get_detector = safe_detector(lambda X_data: iso.predict(X_data) == 1) # inliers are labeled 1, outliers -1
+
+    elif method is OutlierDetector.SVM:  # One-Class SVM
+        # nu ~ contamination, upper bound on fraction of training errors and lower bound of fraction of support vectors.
+        clf = OneClassSVM(nu=0.05, kernel='rbf', gamma='scale') # nu in [0, 0.5]
+        clf.fit(X)
+        print(f"Using One-Class SVM (stateful, nu={clf.nu})")
+        get_detector = safe_detector(lambda X_data: clf.predict(X_data) == 1) # inliers 1, outliers -1
+
+    elif method is OutlierDetector.PCA_SVM:  # PCA + SVM
+        # scale data, pca, svm on low-dim representation
+        n_components_pca = 2  # hyperparam
+        pca_svm_pipeline = make_pipeline(
+            StandardScaler(),
+            PCA(n_components=configs['outlier_detector']['pca_n_components'], random_state=configs["random_state"]),
+            OneClassSVM(nu=configs['outlier_detector']['pca_svm_nu'], kernel='rbf', gamma=configs['outlier_detector']['pca_svm_gamma'])  # rbf is fast on low-dim data
+        )
+
+        print(f"Using PCA+SVM detector (stateful, n_components={n_components_pca}, nu={configs['outlier_detector']['pca_svm_nu']}, gamma={configs['outlier_detector']['pca_svm_gamma']})")
+        pca_svm_pipeline.fit(X)
+        get_detector = safe_detector(lambda X_data: pca_svm_pipeline.predict(X_data) == 1) # inliers 1, outliers -1
+
+    elif method is OutlierDetector.PCA_ISOFOREST:  # PCA + Isolation Forest
+        # IsoForest is not sensitive to scale, so StandardScaler isn't  strictly required for the model, but for PCA.
+        pca_isoforest_pipeline = make_pipeline(
+            StandardScaler(),
+            PCA(n_components=configs['outlier_detector']['pca_n_components'], random_state=configs["random_state"]),
+            IsolationForest(contamination=configs['outlier_detector']['pca_isoforest_contamination'], random_state=configs["random_state"])
+        )
+        print(f"Using PCA+IsolationForest detector (stateful, n_components={configs['outlier_detector']['pca_n_components']}, contamination={configs['outlier_detector']['pca_isoforest_contamination']})")
+        pca_isoforest_pipeline.fit(X)
+        get_detector = safe_detector(lambda X_data: pca_isoforest_pipeline.predict(X_data) == 1) # inliers 1, outliers -1
 
     return get_detector
 
@@ -171,7 +238,7 @@ def feature_selection(x_train, y_train, thresh_var=0.01, thresh_corr=0.95, rf_ma
     selection = make_pipeline(
         VarianceThreshold(threshold=thresh_var),  # low variance removal
         CorrelationRemover(threshold=thresh_corr),  # high correlation removal
-        SelectPercentile(score_func=mutual_info_regression, percentile=24), # equivalent to KBest=200, more robust
+        SelectPercentile(score_func=mutual_info_regression, percentile=30), # equivalent to KBest=200, more robust
         rf_selector # non-linear embedded selection (RF instead of Lasso)
     )
     selection.fit(x_train, y_train)
@@ -193,7 +260,7 @@ def fit(X, y):
     model_name = configs["regression_method"]
     print(f"Fitting model: {model_name}")
 
-    if model_name == REGRESSORS[0]:  # XGBRegressor
+    if model_name is Regressor.XGB:
         model = XGBRegressor(
             random_state=configs["random_state"],
             n_estimators=250,
@@ -207,19 +274,19 @@ def fit(X, y):
             learning_rate=0.05,
             verbosity=0
         )
-    elif model_name == REGRESSORS[1]:  # ExtraTreesRegressor
+    elif model_name is Regressor.EXTRA_TREES:
         model = ExtraTreesRegressor(
             random_state=configs["random_state"],
             n_estimators=100,  # You can tune this
             n_jobs=-1  # Use all cores
         )
-    elif model_name == REGRESSORS[2]: # Ridge
+    elif model_name is Regressor.RIDGE:
         # Ridge is sensitive to feature scales, so we pipeline a scaler
         model = make_pipeline(
             StandardScaler(),
             Ridge(random_state=configs["random_state"])
         )
-    elif model_name == REGRESSORS[3]: # RandomForestRegressor
+    elif model_name is Regressor.RANDOM_FOREST:
         model = RandomForestRegressor(
             random_state=configs["random_state"],
             n_estimators=100,  # Using same default as ExtraTrees
@@ -281,9 +348,9 @@ def run_cv_experiment(x_data, y_data):
     cv_df: A DataFrame with detailed results for each fold.
     """
     model_name = configs["regression_method"]
-    outlier_method = configs["outlier_detection"]
+    outlier_method = configs["outlier_detector"]['method']
     cv_results_list = []
-    print(f"\n--- 🚀 Running CV for: {model_name} + {outlier_method} ---")
+    print(f"\n--- 🚀 Running CV for: {model_name.value} + {outlier_method.value} ---")
     folds = KFold(n_splits=configs["folds"], shuffle=True, random_state=configs["random_state"])
 
     for i, (train_index, validation_index) in enumerate(folds.split(x_data)):
@@ -306,14 +373,96 @@ def run_cv_experiment(x_data, y_data):
         print(f"Fold {i}: Train R² = {train_score:.4f}, Validation R² = {val_score:.4f}")
 
         cv_results_list.append({
-            "model": model_name,
-            "outlier_method": outlier_method,
+            "model": model_name.value,
+            "outlier_method": outlier_method.value,
             "fold": i,
             "train_score": train_score,
             "validation_score": val_score
         })
 
     return pd.DataFrame(cv_results_list)
+
+
+def log_results_to_wandb(cv_df, run):
+    """Logs a CV result DataFrame to a wandb run.
+
+    Parameters:
+    ----------
+    cv_df: DataFrame with CV results
+    run: W&B run object
+
+    Returns:
+    -----------
+    None
+    """
+    print("\nLogging results to W&B...")
+    # Generate and log boxplot
+    fig, ax = plt.subplots(figsize=(11, 13))
+    sns.boxplot(data=cv_df[["train_score", "validation_score"]], ax=ax)
+    ax.set_title("Cross-Validation Results")
+    ax.set_ylabel("R² Score")
+    ax.set_xlabel("Score Type")
+    run.log({"CV_Boxplot": wandb.Image(fig)})
+    plt.close(fig)
+    # Store raw CV results in table
+    cv_table = wandb.Table(dataframe=cv_df)
+    run.log({"CV Results": cv_table})
+    # Log summary statistics
+    run.summary["mean_train_score"] = cv_df["train_score"].mean()
+    run.summary["mean_validation_score"] = cv_df["validation_score"].mean()
+    run.summary["std_train_score"] = cv_df["train_score"].std()
+    run.summary["std_validation_score"] = cv_df["validation_score"].std()
+    print("✅ W&B run complete.")
+
+
+def save_results_locally(results_df, is_grouped_run):
+    """Saves a results DataFrame locally to CSV and creates a boxplot.
+
+    Parameters:
+    ----------
+    results_df: DataFrame with CV results
+    is_grouped_run: Boolean indicating if multiple model/outlier combinations are included.
+
+    Returns:
+    -----------
+    None
+    """
+    print("\n\n--- 📊 Final Performance Summary ---")
+
+    # save csv
+    csv_filename = "cv_run_results.csv"
+    if is_grouped_run:
+        csv_filename = "cv_run_results_all.csv"
+
+    results_df.to_csv(csv_filename, index=False)
+    print(f"\n✅ All results saved to '{csv_filename}'")
+
+    print("\n--- Validation R² Summary ---")
+    if is_grouped_run:
+        summary_stats = results_df.groupby(['model', 'outlier_method'])['validation_score'].describe()
+    else:
+        summary_stats = results_df['validation_score'].describe()
+    print(summary_stats)
+
+    # generate boxplot
+    fig, ax = plt.subplots(figsize=(14, 8))
+    plot_filename = "cv_run_boxplot.png"
+
+    if is_grouped_run:
+        sns.boxplot(data=results_df, x='outlier_method', y='validation_score', hue='model', ax=ax)
+        ax.set_title("Model Comparison by Outlier Method (Validation R²)")
+        ax.set_xlabel("Outlier Detection Method")
+        ax.legend(title="Model")
+        plot_filename = "cv_run_boxplot_all.png"
+    else:
+        sns.boxplot(data=results_df[["train_score", "validation_score"]], ax=ax)
+        ax.set_title(f"CV Results: {configs['regression_method'].value} + {configs['outlier_detector']['method'].value}")
+        ax.set_xlabel("Score Type")
+
+    ax.set_ylabel("R² Score")
+    plt.savefig(plot_filename)
+    print(f"\n✅ Saved boxplot to '{plot_filename}'")
+    print("\n✅ Local run complete.")
 
 
 if __name__ == "__main__":
@@ -323,8 +472,8 @@ if __name__ == "__main__":
     if RUN_MODE == RunMode.FINAL_EVALUATION:
         # Generates submission.csv using the single configuration defined in the global 'configs' dict
         print(f"🚀 Running final evaluation pipeline with:")
-        print(f"   Model: {configs['regression_method']}")
-        print(f"   Outlier Detector: {configs['outlier_detection']}")
+        print(f"   Model: {configs['regression_method'].value}")
+        print(f"   Outlier Detector: {configs['outlier_detection'].value}")
 
         x_test = pd.read_csv("./data/X_test.csv", skiprows=1, header=None).values[:, 1:]
         x_train = x_training_data
@@ -344,67 +493,32 @@ if __name__ == "__main__":
     elif RUN_MODE == RunMode.WANDB:
         # Runs a single CV experiment (using 'configs') and logs to W&B.
         print(f"🚀 Starting W&B run for: {configs['regression_method']} + {configs['outlier_detection']}")
-
         with wandb.init(
             project="AML_task1",
             config=configs,
-            tags=["regression", configs["regression_method"], configs["outlier_detection"]],
-            name=f"regressor {configs['regression_method']}_{configs['outlier_detection']}",
+            tags=["regression", configs["regression_method"].value, configs["outlier_detection"].value],
+            name=f"regressor {configs['regression_method'].value}_{configs['outlier_detection'].value}",
             notes=f''
         ) as run:
             cv_df = run_cv_experiment(x_training_data, y_training_data)
+            log_results_to_wandb(cv_df, run)
 
-            # Generate and log boxplot
-            fig, ax = plt.subplots(figsize=(11, 13))
-            sns.boxplot(data=cv_df[["train_score", "validation_score"]], ax=ax)
-            ax.set_title("Cross-Validation Results")
-            ax.set_ylabel("R² Score")
-            ax.set_xlabel("Score Type")
-            run.log({"CV_Boxplot": wandb.Image(fig)})
-            plt.close(fig)
+    elif RUN_MODE == RunMode.CURRENT_CONFIG:
+        print(f"🚀 Starting single local CV run for: {configs['regression_method'].value} + {configs['outlier_detector']['method'].value}")
+        cv_df = run_cv_experiment(x_training_data, y_training_data)
+        save_results_locally(cv_df, is_grouped_run=False)  # Use the helper
 
-            # Store raw CV results in table
-            cv_table = wandb.Table(dataframe=cv_df)
-            run.log({"CV Results": cv_table})
-
-            # Log summary statistics
-            run.summary["mean_train_score"] = cv_df["train_score"].mean()
-            run.summary["mean_validation_score"] = cv_df["validation_score"].mean()
-            run.summary["std_train_score"] = cv_df["train_score"].std()
-            run.summary["std_validation_score"] = cv_df["validation_score"].std()
-            print("\n✅ W&B run complete.")
-
-    elif RUN_MODE == RunMode.CVRUN:
+    elif RUN_MODE == RunMode.GRID:
         # Runs all combinations of models and outlier detectors locally. Saves one CSV and one plot with all results.
         print("🚀 Starting local 'Run All' comparison...")
         all_results_dfs = []
 
-        for model_name in REGRESSORS:
+        for model_name in Regressor:
             configs["regression_method"] = model_name  # !update global config
 
-            for outlier_method in OUTLIER_DETECTORS:
+            for outlier_method in OutlierDetector:
                 configs["outlier_detection"] = outlier_method  # !update global config
                 cv_df = run_cv_experiment(x_training_data, y_training_data)
                 all_results_dfs.append(cv_df)
 
-        # Comparison and csv export
-        print("\n\n--- 📊 Final Performance Summary ---")
         results_df = pd.concat(all_results_dfs)
-        csv_filename = "all_model_results.csv"
-        results_df.to_csv(csv_filename, index=False)
-        print(f"\n✅ All results saved to '{csv_filename}'")
-        print("\n--- Validation R² Summary ---")
-        summary_stats = results_df.groupby(['model', 'outlier_method'])['validation_score'].describe()
-        print(summary_stats)
-
-        # Generate boxplot grouped by model
-        fig, ax = plt.subplots(figsize=(14, 8))
-        sns.boxplot(data=results_df, x='outlier_method', y='validation_score', hue='model', ax=ax)
-        ax.set_title("Model Comparison by Outlier Method (Validation R²)")
-        ax.set_ylabel("R² Score (Validation)")
-        ax.set_xlabel("Outlier Detection Method")
-        ax.legend(title="Model")
-        plot_filename = "model_comparison_boxplot.png"
-        plt.savefig(plot_filename)
-        print(f"\n✅ Saved grouped boxplot to '{plot_filename}'")
-        print("\n✅ Local comparison complete.")
