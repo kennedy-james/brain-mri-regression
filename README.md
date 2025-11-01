@@ -9,7 +9,7 @@
 The following methods were considered for outlier detection:
 z-score, knn, isolation forest, svm, pca with svm, pca with isoforest.
 
-The current implementation uses 2 principal components together with Isolation Forest for outlier detection.
+For outlier detection, the current implementation uses the 2 principal components to fit an Isolation Forest with contamination of 0.045.
 
 ![outlier_detector_pca_isoforest.png](reports/figures/outlier_detector_pca_isoforest.png)
 
