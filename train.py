@@ -12,7 +12,7 @@ from sklearn.feature_selection import mutual_info_regression, SelectFromModel, S
 from sklearn.impute import SimpleImputer, KNNImputer, IterativeImputer
 from sklearn.linear_model import Ridge  # Used for imputation AND regression
 from sklearn.metrics import r2_score
-from sklearn.model_selection import KFold
+from sklearn.model_selection import KFold, train_test_split
 from sklearn.preprocessing import StandardScaler
 
 # Lars imports
@@ -68,7 +68,7 @@ class Regressor(Enum):
     stacking = auto()
 
 
-RUN_MODE = RunMode.optuna_search
+RUN_MODE = RunMode.current_config
 print('Loading training data...') # optuna needs to have access to data globally
 x_training_data = pd.read_csv("./data/X_train.csv", skiprows=1, header=None).values[:, 1:]
 y_training_data = (pd.read_csv("./data/y_train.csv", skiprows=1, header=None).values[:, 1:].ravel())
@@ -85,13 +85,15 @@ configs = {
         'method': OutlierDetector.pca_isoforest,
         'zscore_std': 1,
         'isoforest_contamination': 0.05,
-        'pca_n_components': 2,
+        'pca_n_components': 10,
         'pca_svm_nu': 0.05,    # "expected amount of outliers to discard"
         'pca_svm_gamma': 0.0003, # blurriness of internal holes within clusters
-        'pca_isoforest_contamination': 0.045, # proportion of outliers
+        'pca_isoforest_contamination': 0.02, # proportion of outliers
     },
+    'xgboost': { 'eval_metric': 'rmse', 'early_stopping_rounds': 20 },
     'regression_method': Regressor.stacking,
-    'selection': {'thresh_var': 0.01, 'thresh_corr': 0.95},
+    'selection': {'is_enabled': True, 'thresh_var': 0.01, 'thresh_corr': 0.90},
+    'optuna': { 'load_file': 'best_params_lowering_overfit.json'}
 }
 
 
@@ -308,18 +310,19 @@ def fit(X, y):
             print("Using tuned XGBoost parameters from Optuna...")
             model = XGBRegressor(**configs['regression_params'])
         else:
-            # This is the original, hard-coded XGBoost
             model = XGBRegressor(
                 random_state=configs["random_state"],
-                n_estimators=250,
-                max_depth=4,
-                min_child_weight=10,
-                gamma=0.5,
-                subsample=0.7,
-                colsample_bytree=0.7,
-                reg_alpha=0.3,
-                reg_lambda=1.5,
-                learning_rate=0.05,
+                n_estimators=300,
+                max_depth=5,  # shallower trees
+                min_child_weight=15,  # require more samples per leaf
+                gamma=1.0,  # stronger split penalty
+                subsample=0.75,
+                colsample_bytree=0.4,  # fewer features per tree
+                reg_alpha=0.5,
+                reg_lambda=3.0,
+                learning_rate=0.03,
+                eval_metric=configs['xgboost']['eval_metric'],
+                early_stopping_rounds=configs['xgboost']['early_stopping_rounds'],
                 verbosity=0
             )
     elif model_name is Regressor.extra_trees:
@@ -346,15 +349,16 @@ def fit(X, y):
         estimators = [
             ('xgb', XGBRegressor(
                 random_state=configs["random_state"],
-                n_estimators=250,
-                max_depth=4,
-                min_child_weight=10,
-                gamma=0.5,
-                subsample=0.7,
-                colsample_bytree=0.7,
-                reg_alpha=0.3,
-                reg_lambda=1.5,
-                learning_rate=0.05,
+                n_estimators=300,
+                max_depth=5,  # shallower trees
+                min_child_weight=15,  # require more samples per leaf
+                gamma=1.0,  # stronger split penalty
+                subsample=0.75,
+                colsample_bytree=0.4,  # fewer features per tree
+                reg_alpha=0.5,
+                reg_lambda=3.0,
+                learning_rate=0.03,
+                eval_metric=configs['xgboost']['eval_metric'],
                 verbosity=0
             )),
             ('ridge', make_pipeline(
@@ -378,7 +382,13 @@ def fit(X, y):
             n_jobs=-1  # Use all cores
         )
 
-    model.fit(X, y)
+    if isinstance(model, XGBRegressor):
+        x_train_sub, x_val_sub, y_train_sub, y_val_sub = train_test_split(
+            X, y, test_size=0.1, random_state=configs["random_state"]
+        )
+        model.fit(x_train_sub, y_train_sub, eval_set=[(x_val_sub, y_val_sub)], verbose=False)
+    else:
+        model.fit(X, y)
 
     if 'regression_params' in configs:
         del configs['regression_params']  # clean up tuned params to not break next run
@@ -422,14 +432,13 @@ def objective(trial):
     configs['regression_params'] = {
         'random_state': configs["random_state"],
         'n_estimators': trial.suggest_int('n_estimators', low=100, high=500),
-        'max_depth': trial.suggest_int('max_depth', low=3, high=10),
-        'min_child_weight': trial.suggest_int('min_child_weight', low=1, high=20),
-        'gamma': trial.suggest_float('gamma', low=0.0, high=3.0),
+        'max_depth': trial.suggest_int('max_depth', low=3, high=8),
+        'min_child_weight': trial.suggest_int('min_child_weight', low=10, high=25),
+        'gamma': trial.suggest_float('gamma', low=0.5, high=3.0),
         'subsample': trial.suggest_float('subsample', low=0.6, high=1.0),
-        'colsample_bytree': trial.suggest_float('colsample_bytree', low=0.1, high=0.5),
-        # CRITICAL: Use FEWER features per tree
-        'reg_alpha': trial.suggest_float('reg_alpha', low=0.0, high=2.0),
-        'reg_lambda': trial.suggest_float('reg_lambda', low=1.0, high=5.0),  # Higher L2 for high-D
+        'colsample_bytree': trial.suggest_float('colsample_bytree', low=0.3, high=0.7),
+        'reg_alpha': trial.suggest_float('reg_alpha', low=0.1, high=2.5),
+        'reg_lambda': trial.suggest_float('reg_lambda', low=2.0, high=6.0),  # Higher L2 for high-D
         'learning_rate': trial.suggest_float('learning_rate', low=0.01, high=0.1, log=True),
         'verbosity': 0
     }
@@ -463,11 +472,12 @@ def train_model(X, y, i=None):
     # === THIS IS THE FIX ===
     # The logic is now simple: if it's a tree model, skip selection.
     model_name = configs["regression_method"]
-    if model_name in [Regressor.xgb, Regressor.extra_trees, Regressor.random_forest_regressor]:
+    if not configs['selection']['is_enabled'] and model_name in [Regressor.xgb, Regressor.extra_trees, Regressor.random_forest_regressor]:
         print("Using PassthroughSelector (skipping feature selection for tree-based model).")
         selection = PassthroughSelector()
         X_proc = selection.fit_transform(X_filt)
         print(f"Selected features: {X_proc.shape[1]} (all)")
+
     else:
         # This will now correctly run for Ridge or Stacking
         print("Running feature_selection pipeline for non-tree model...")
@@ -725,7 +735,7 @@ if __name__ == "__main__":
 
         study = optuna.create_study(storage=storage_name, study_name=study_name, direction='maximize', load_if_exists=True)
         # run 50 different trials. may take long
-        study.optimize(objective, n_trials=75)
+        study.optimize(objective, n_trials=50)
 
         print("\n\n--- 🏆 Optuna Search Complete ---")
         print(f'   study: {study.study_name}')
@@ -739,7 +749,7 @@ if __name__ == "__main__":
         print("\n✅ Best parameters saved to best_params.json")
 
     elif RUN_MODE is RunMode.optuna_config:
-        load_best_params(json_file='suggested_params.json')
+        load_best_params(json_file=configs['optuna']['load_file'])
         print(
             f"🚀 Starting single local CV run for: {configs['regression_method'].name} + {configs['outlier_detector']['method'].name}")
         cv_df = run_cv_experiment(x_training_data, y_training_data)
