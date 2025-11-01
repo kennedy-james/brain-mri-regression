@@ -66,7 +66,7 @@ RUN_MODE = RunMode.GRID
 configs = {
     'folds': 10,
     'random_state': 42,
-    'impute_method': Imputer.mean,
+    'impute_method': Imputer.knn,
     'knn_neighbours': 75,
     'knn_weight': 'uniform',  # possible neighbour weights for average (uniform, distance)
     'iterative_estimator': 'Ridge()',  # Iterative configuration
@@ -229,9 +229,22 @@ class CorrelationRemover(BaseEstimator, TransformerMixin):
             raise ValueError("Must fit before transform.")
         df = pd.DataFrame(X)
         return df.drop(columns=self.to_drop_).values
+    
+class PrintShape(BaseEstimator, TransformerMixin):
+    def __init__(self, message=""):
+        self.message = message
+
+    def fit(self, X, y=None):
+        # No-op: just return self (required for fitting)
+        return self
+
+    def transform(self, X):
+        # Print the shape (focus on n_features = X.shape[1])
+        print(f"number of remaining features {self.message}: {X.shape[1]}")
+        return X  # Pass through unchanged
 
 
-def feature_selection(x_train, y_train, thresh_var=0.01, thresh_corr=0.95, rf_max_feats=120, rf_n_estimators=70):
+def feature_selection(x_train, y_train, thresh_var=0.01, thresh_corr=0.93, rf_max_feats=250, rf_n_estimators=70):
     if hasattr(x_train, 'values'):
         x_train = x_train.values
         print("Converted to numpy array")
@@ -241,9 +254,12 @@ def feature_selection(x_train, y_train, thresh_var=0.01, thresh_corr=0.95, rf_ma
 
     selection = make_pipeline(
         VarianceThreshold(threshold=thresh_var),  # low variance removal
+        PrintShape(message="after VarianceThreshold"),  # Logs after this step
         CorrelationRemover(threshold=thresh_corr),  # high correlation removal
-        SelectPercentile(score_func=mutual_info_regression, percentile=30), # equivalent to KBest=200, more robust
-        rf_selector # non-linear embedded selection (RF instead of Lasso)
+        PrintShape(message="after CorrelationRemover"),  # Logs after this step
+        SelectPercentile(score_func=mutual_info_regression, percentile=40),  # equivalent to KBest=200, more robust
+        PrintShape(message="after SelectPercentile"),  # Logs after this step
+        rf_selector  # non-linear embedded selection (RF instead of Lasso)
     )
     selection.fit(x_train, y_train)
     return selection
