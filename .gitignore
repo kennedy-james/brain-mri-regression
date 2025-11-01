@@ -2,3 +2,5 @@ submission.csv
 wandb/
 .idea/
 .ipynb_checkpoints/
+__pycache__/
+cv_run_*

@@ -6,6 +6,13 @@
 
 ### Outlier Detection
 
+The following methods were considered for outlier detection:
+z-score, knn, isolation forest, svm, pca with svm, pca with isoforest.
+
+The current implementation uses 2 principal components together with Isolation Forest for outlier detection.
+
+![outlier_detector_pca_isoforest.png](reports/figures/outlier_detector_pca_isoforest.png)
+
 ### Feature Selection
 
 ### Age Prediction Model
