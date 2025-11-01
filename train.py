@@ -28,12 +28,14 @@ from pyod.models.knn import KNN
 from sklearn.ensemble import IsolationForest
 from sklearn.svm import OneClassSVM
 from sklearn.decomposition import PCA
+from sklearn.ensemble import StackingRegressor
+from sklearn.svm import SVR
 
 class RunMode(Enum):
-    FINAL_EVALUATION = auto() # produce submission file for test data
-    WANDB = auto() # log to wandb
-    GRID = auto()   # run all combinations of models and outlier detectors locally
-    CURRENT_CONFIG = auto() # run single CV with current config
+    final_evaluation = auto() # produce submission file for test data
+    wandb = auto() # log to wandb
+    grid = auto()   # run all combinations of models and outlier detectors locally
+    current_config = auto() # run single CV with current config
 
 
 class Imputer(Enum):
@@ -55,18 +57,19 @@ class OutlierDetector(Enum):
 
 
 class Regressor(Enum):
-    XGBRegressor = auto()
-    ExtraTreesRegressor = auto()
-    Ridge = auto()
-    RandomForestRegressor = auto()
+    xgb = auto()
+    extra_trees = auto()
+    ridge = auto()
+    random_forest_regressor = auto()
+    stacking = auto()
 
 
-RUN_MODE = RunMode.GRID
+RUN_MODE = RunMode.current_config
 
 configs = {
     'folds': 10,
     'random_state': 42,
-    'impute_method': Imputer.mean,
+    'impute_method': Imputer.knn,
     'knn_neighbours': 75,
     'knn_weight': 'uniform',  # possible neighbour weights for average (uniform, distance)
     'iterative_estimator': 'Ridge()',  # Iterative configuration
@@ -79,7 +82,7 @@ configs = {
         'pca_svm_gamma': 0.0003, # blurriness of internal holes within clusters
         'pca_isoforest_contamination': 0.045, # proportion of outliers
     },
-    'regression_method': Regressor.XGBRegressor,
+    'regression_method': Regressor.stacking,
     'selection': {'thresh_var': 0.01, 'thresh_corr': 0.95},
 }
 
@@ -264,7 +267,7 @@ def fit(X, y):
     model_name = configs["regression_method"]
     print(f"Fitting model: {model_name}")
 
-    if model_name is Regressor.XGBRegressor:
+    if model_name is Regressor.xgb:
         model = XGBRegressor(
             random_state=configs["random_state"],
             n_estimators=250,
@@ -278,23 +281,60 @@ def fit(X, y):
             learning_rate=0.05,
             verbosity=0
         )
-    elif model_name is Regressor.ExtraTreesRegressor:
+    elif model_name is Regressor.extra_trees:
         model = ExtraTreesRegressor(
             random_state=configs["random_state"],
             n_estimators=100,  # You can tune this
             n_jobs=-1  # Use all cores
         )
-    elif model_name is Regressor.Ridge:
+    elif model_name is Regressor.ridge:
         # Ridge is sensitive to feature scales, so we pipeline a scaler
         model = make_pipeline(
             StandardScaler(),
             Ridge(random_state=configs["random_state"])
         )
-    elif model_name is Regressor.RandomForestRegressor:
+    elif model_name is Regressor.random_forest_regressor:
         model = RandomForestRegressor(
             random_state=configs["random_state"],
             n_estimators=100,  # Using same default as ExtraTrees
             n_jobs=-1
+        )
+    elif model_name is Regressor.stacking:
+        print("Defining stacked model...")
+        # base models: regularized XGB, simple Ridge, and fast SVR
+        estimators = [
+            ('xgb', XGBRegressor(
+                random_state=configs["random_state"],
+                n_estimators=250,
+                max_depth=4,
+                min_child_weight=10,
+                gamma=0.5,
+                subsample=0.7,
+                colsample_bytree=0.7,
+                reg_alpha=0.3,
+                reg_lambda=1.5,
+                learning_rate=0.05,
+                verbosity=0
+            )),
+            ('ridge', make_pipeline(
+                StandardScaler(),
+                Ridge(random_state=configs["random_state"])
+            )),
+            ('svr_linear', make_pipeline(
+                StandardScaler(),
+                SVR(kernel='linear', C=0.1) # rbf is too slow
+            ))
+        ]
+
+        # meta-model combining predictions: simple robust Ridge model.
+        final_estimator = Ridge(random_state=configs["random_state"])
+
+        # cv=5 means it will use 5-fold cross-validation internally to generate predictions, which prevents data leakage.
+        model = StackingRegressor(
+            estimators=estimators,
+            final_estimator=final_estimator,
+            cv=5,  # Use 5 folds, 10 is too slow
+            n_jobs=-1  # Use all cores
         )
 
     model.fit(X, y)
@@ -473,7 +513,7 @@ if __name__ == "__main__":
     x_training_data = pd.read_csv("./data/X_train.csv", skiprows=1, header=None).values[:, 1:]
     y_training_data = (pd.read_csv("./data/y_train.csv", skiprows=1, header=None).values[:, 1:].ravel())
 
-    if RUN_MODE == RunMode.FINAL_EVALUATION:
+    if RUN_MODE == RunMode.final_evaluation:
         # Generates submission.csv using the single configuration defined in the global 'configs' dict
         print(f"🚀 Running final evaluation pipeline with:")
         print(f"   Model: {configs['regression_method'].name}")
@@ -494,7 +534,7 @@ if __name__ == "__main__":
         table.to_csv("./submission.csv", index=False)
         print("\n✅ Successfully generated submission.csv")
 
-    elif RUN_MODE == RunMode.WANDB:
+    elif RUN_MODE == RunMode.wandb:
         # Runs a single CV experiment (using 'configs') and logs to W&B.
         print(f"🚀 Starting W&B run for: {configs['regression_method']} + {configs['outlier_detection']}")
         with wandb.init(
@@ -507,12 +547,12 @@ if __name__ == "__main__":
             cv_df = run_cv_experiment(x_training_data, y_training_data)
             log_results_to_wandb(cv_df, run)
 
-    elif RUN_MODE == RunMode.CURRENT_CONFIG:
+    elif RUN_MODE == RunMode.current_config:
         print(f"🚀 Starting single local CV run for: {configs['regression_method'].name} + {configs['outlier_detector']['method'].name}")
         cv_df = run_cv_experiment(x_training_data, y_training_data)
         save_results_locally(cv_df, is_grouped_run=False)  # Use the helper
 
-    elif RUN_MODE == RunMode.GRID:
+    elif RUN_MODE == RunMode.grid:
         # Runs all combinations of models and outlier detectors locally. Saves one CSV and one plot with all results.
         print("🚀 Starting local 'Run All' comparison...")
         all_results_dfs = []
