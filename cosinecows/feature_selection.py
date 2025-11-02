@@ -4,7 +4,8 @@ Generate features for modeling.
 import numpy as np
 import pandas as pd
 from sklearn.base import BaseEstimator, TransformerMixin
-from sklearn.feature_selection import VarianceThreshold, SelectPercentile, mutual_info_regression
+from sklearn.ensemble import RandomForestRegressor
+from sklearn.feature_selection import VarianceThreshold, SelectPercentile, mutual_info_regression, SelectFromModel
 from sklearn.pipeline import make_pipeline
 
 
@@ -39,13 +40,27 @@ class PassthroughSelector(BaseEstimator, TransformerMixin):
         return X # Just return the data
 
 
+class PrintShape(BaseEstimator, TransformerMixin):
+    def __init__(self, message=""):
+        self.message = message
+
+    def fit(self, X, y=None):
+        # No-op: just return self (required for fitting)
+        return self
+
+    def transform(self, X):
+        # Print the shape (focus on n_features = X.shape[1])
+        print(f"number of remaining features {self.message}: {X.shape[1]}")
+        return X  # Pass through unchanged
+
+
 def feature_selection(x_train, y_train, thresh_var=0.01, thresh_corr=0.95, rf_max_feats=120, rf_n_estimators=70, percentile=40):
     if hasattr(x_train, 'values'):
         x_train = x_train.values
         print("Converted to numpy array")
 
-    # rf = RandomForestRegressor(n_estimators=rf_n_estimators, random_state=configs['random_state'], n_jobs=-1)
-    # rf_selector = SelectFromModel(rf, max_features=rf_max_feats, threshold='0.1*mean')
+    rf = RandomForestRegressor(n_estimators=rf_n_estimators, random_state=configs['random_state'], n_jobs=-1)
+    rf_selector = SelectFromModel(rf, max_features=rf_max_feats, threshold='0.1*mean')
     univariate_selector = SelectPercentile(
         score_func=mutual_info_regression,
         percentile=percentile
@@ -53,10 +68,12 @@ def feature_selection(x_train, y_train, thresh_var=0.01, thresh_corr=0.95, rf_ma
 
     selection = make_pipeline(
         VarianceThreshold(threshold=thresh_var),  # low variance removal
+        PrintShape(message="after VarianceThreshold"),  # Logs after this step
         CorrelationRemover(threshold=thresh_corr),  # high correlation removal
-        # SelectPercentile(score_func=mutual_info_regression, percentile=30), # equivalent to KBest=200, more robust
-        # rf_selector # non-linear embedded selection (RF instead of Lasso)
-        univariate_selector # selects top x% feats based on mutual info
+        PrintShape(message="after CorrelationRemover"),  # Logs after this step
+        SelectPercentile(score_func=mutual_info_regression, percentile=40),  # equivalent to KBest=200, more robust
+        PrintShape(message="after SelectPercentile"),  # Logs after this step
+        rf_selector  # non-linear embedded selection (RF instead of Lasso)
     )
     selection.fit(x_train, y_train)
     return selection
