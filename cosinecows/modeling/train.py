@@ -222,7 +222,10 @@ def run_cv_experiment(x_data, y_data):
 
         # Validation Pipeline
         x_val_imputed = imputer.transform(x_val)
-        x_val_selected = selection.transform(x_val_imputed) # apply selection (NO outlier removal on validation data)
+        val_mask = detector(x_val_imputed)
+        x_val_filt = x_val_imputed[val_mask, :]
+        y_val = y_val[val_mask]
+        x_val_selected = selection.transform(x_val_filt)
         y_val_pred = model.predict(x_val_selected)
         val_score = r2_score(y_val, y_val_pred)
         print(f"Fold {i}: Train R² = {train_score:.4f}, Validation R² = {val_score:.4f}")
