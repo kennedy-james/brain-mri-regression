@@ -1,0 +1,14 @@
+{
+    "impute_method": "knn",
+    "outlier_method_name": "zscore",
+    "zscore_std": 1.1774013680438067,
+    "n_estimators": 330,
+    "max_depth": 3,
+    "min_child_weight": 12,
+    "gamma": 1.5455416139126186,
+    "subsample": 0.7127741980143467,
+    "colsample_bytree": 0.4890964314114038,
+    "reg_alpha": 1.7752140169667614,
+    "reg_lambda": 3.0723630314868164,
+    "learning_rate": 0.04682118193924506
+}
