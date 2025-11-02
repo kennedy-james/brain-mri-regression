@@ -1,9 +1,10 @@
 import json
 
 from matplotlib import pyplot as plt
+import seaborn as sns
 
 from cosinecows.config import configs, Regressor, OutlierDetector, Imputer
-from cosinecows.dataset import PROCESSED_DATA_DIR
+from cosinecows.dataset import REPORTS_DIR
 
 
 def load_best_params(json_file="best_params.json"):
@@ -78,7 +79,7 @@ def load_best_params(json_file="best_params.json"):
 
 
 
-def save_results_locally(results_df, is_grouped_run, sns=None):
+def save_results_locally(results_df, is_grouped_run):
     """Saves a results DataFrame locally to CSV and creates a boxplot.
 
     Parameters:
@@ -93,9 +94,9 @@ def save_results_locally(results_df, is_grouped_run, sns=None):
     print("\n\n--- 📊 Final Performance Summary ---")
 
     # save csv
-    csv_filename = PROCESSED_DATA_DIR / "cv_run_results.csv"
+    csv_filename = REPORTS_DIR / "cv_run_results.csv"
     if is_grouped_run:
-        csv_filename = PROCESSED_DATA_DIR / "cv_run_results_all.csv"
+        csv_filename = REPORTS_DIR / "cv_run_results_all.csv"
 
     results_df.to_csv(csv_filename, index=False)
     print(f"\n✅ All results saved to '{csv_filename}'")
