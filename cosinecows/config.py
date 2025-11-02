@@ -35,7 +35,7 @@ class Regressor(Enum):
     stacking = auto()
 
 
-RUNNING_MODE = RunMode.optuna_search
+RUNNING_MODE = RunMode.current_config
 configs = {
     'folds': 10,
     'random_state': 42,

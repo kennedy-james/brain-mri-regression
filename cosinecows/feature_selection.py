@@ -8,6 +8,8 @@ from sklearn.ensemble import RandomForestRegressor
 from sklearn.feature_selection import VarianceThreshold, SelectPercentile, mutual_info_regression, SelectFromModel
 from sklearn.pipeline import make_pipeline
 
+from cosinecows.config import configs
+
 
 class CorrelationRemover(BaseEstimator, TransformerMixin):
     def __init__(self, threshold=0.95):
