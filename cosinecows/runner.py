@@ -6,7 +6,7 @@ import pandas as pd
 import optuna
 import json
 from cosinecows.config import RUNNING_MODE, configs, RunMode, Imputer, OutlierDetector, Regressor
-from cosinecows.dataset import load_train_data, load_test_data
+from cosinecows.dataset import load_train_data, load_test_data, MODELS_DIR, REGRESSORS_DIR
 from cosinecows.dataset import RAW_DATA_DIR, PROCESSED_DATA_DIR
 from cosinecows.io import load_best_params, save_results_locally
 from cosinecows.modeling.train import train_model, run_cv_experiment
@@ -29,7 +29,7 @@ def run_final_evaluation():
     # --- END NEW ---
 
     x_test = load_test_data()
-    final_pipeline_path = "./model.pkl"
+    final_pipeline_path = REGRESSORS_DIR / 'impKnn-outlierPcaIsofor-featSelect-stacking.pkl'
     if os.path.isfile(final_pipeline_path):
         print(f"\nLoading pre-trained pipeline from {final_pipeline_path}...")
         pipeline_components = joblib.load(final_pipeline_path)
@@ -63,12 +63,12 @@ def run_final_evaluation():
 
 def run_wandb():
     # Runs a single CV experiment (using 'configs') and logs to W&B.
-    print(f"🚀 Starting W&B run for: {configs['regression_method']} + {configs['outlier_detection']}")
+    print(f"🚀 Starting W&B run for: {configs['regression_method']} + {configs['outlier_detector']['method']}")
     with wandb.init(
             project="AML_task1",
             config=configs,
-            tags=["regression", configs["regression_method"].name, configs["outlier_detection"].name],
-            name=f"regressor {configs['regression_method'].name}_{configs['outlier_detection'].name}",
+            tags=["regression", configs["regression_method"], configs["outlier_detector"]['method']],
+            name=f"regressor {configs['regression_method']}_{configs['outlier_detector']['method']}",
             notes=f''
     ) as run:
         cv_df = run_cv_experiment(x_train, y_train)
