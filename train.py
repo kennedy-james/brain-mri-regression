@@ -6,7 +6,6 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
 from sklearn.base import BaseEstimator, TransformerMixin
-from sklearn.ensemble import ExtraTreesRegressor
 from sklearn.experimental import enable_iterative_imputer
 from sklearn.feature_selection import mutual_info_regression, SelectFromModel, SelectPercentile
 from sklearn.impute import SimpleImputer, KNNImputer, IterativeImputer
@@ -21,6 +20,8 @@ from sklearn import pipeline
 from sklearn.ensemble import RandomForestRegressor
 from sklearn.feature_selection import VarianceThreshold
 from sklearn.pipeline import make_pipeline
+from sklearn.ensemble import ExtraTreesRegressor
+from sklearn.ensemble import GradientBoostingRegressor
 
 # Jef imports
 from enum import Enum, auto
@@ -29,11 +30,13 @@ from sklearn.ensemble import IsolationForest
 from sklearn.svm import OneClassSVM
 from sklearn.decomposition import PCA
 
+
 class RunMode(Enum):
     FINAL_EVALUATION = auto() # produce submission file for test data
     WANDB = auto() # log to wandb
     GRID = auto()   # run all combinations of models and outlier detectors locally
     CURRENT_CONFIG = auto() # run single CV with current config
+    WANDB_SWEEP = auto() # run a wandb sweep for hyperparameter optimization
 
 
 class Imputer(Enum):
@@ -53,15 +56,14 @@ class OutlierDetector(Enum):
     pca_isoforest = auto()
 
 
-
 class Regressor(Enum):
     XGBRegressor = auto()
     ExtraTreesRegressor = auto()
     Ridge = auto()
     RandomForestRegressor = auto()
+    GradientBoostingRegressor = auto()
 
-
-RUN_MODE = RunMode.GRID
+RUN_MODE = RunMode.WANDB_SWEEP
 
 configs = {
     'folds': 10,
@@ -79,8 +81,13 @@ configs = {
         'pca_svm_gamma': 0.0003, # blurriness of internal holes within clusters
         'pca_isoforest_contamination': 0.045, # proportion of outliers
     },
-    'regression_method': Regressor.XGBRegressor,
+    'regression_method': Regressor.GradientBoostingRegressor,
     'selection': {'thresh_var': 0.01, 'thresh_corr': 0.95},
+
+    'gb_n_estimators': 1000,
+    'gb_learning_rate': 0.1,
+    'gb_max_depth': 3,
+    'gb_min_samples_split': 2,
 }
 
 
@@ -243,8 +250,7 @@ class PrintShape(BaseEstimator, TransformerMixin):
         print(f"number of remaining features {self.message}: {X.shape[1]}")
         return X  # Pass through unchanged
 
-
-def feature_selection(x_train, y_train, thresh_var=0.01, thresh_corr=0.93, rf_max_feats=250, rf_n_estimators=70):
+def feature_selection(x_train, y_train, thresh_var=0.01, thresh_corr=0.95, rf_max_feats=200, rf_n_estimators=70):
     if hasattr(x_train, 'values'):
         x_train = x_train.values
         print("Converted to numpy array")
@@ -254,11 +260,11 @@ def feature_selection(x_train, y_train, thresh_var=0.01, thresh_corr=0.93, rf_ma
 
     selection = make_pipeline(
         VarianceThreshold(threshold=thresh_var),  # low variance removal
-        PrintShape(message="after VarianceThreshold"),  # Logs after this step
+        #PrintShape(message="after VarianceThreshold"),  # Logs after this step
         CorrelationRemover(threshold=thresh_corr),  # high correlation removal
-        PrintShape(message="after CorrelationRemover"),  # Logs after this step
+        #PrintShape(message="after CorrelationRemover"),  # Logs after this step
         SelectPercentile(score_func=mutual_info_regression, percentile=40),  # equivalent to KBest=200, more robust
-        PrintShape(message="after SelectPercentile"),  # Logs after this step
+        #PrintShape(message="after SelectPercentile"),  # Logs after this step
         rf_selector  # non-linear embedded selection (RF instead of Lasso)
     )
     selection.fit(x_train, y_train)
@@ -294,12 +300,6 @@ def fit(X, y):
             learning_rate=0.05,
             verbosity=0
         )
-    elif model_name is Regressor.ExtraTreesRegressor:
-        model = ExtraTreesRegressor(
-            random_state=configs["random_state"],
-            n_estimators=100,  # You can tune this
-            n_jobs=-1  # Use all cores
-        )
     elif model_name is Regressor.Ridge:
         # Ridge is sensitive to feature scales, so we pipeline a scaler
         model = make_pipeline(
@@ -312,7 +312,20 @@ def fit(X, y):
             n_estimators=100,  # Using same default as ExtraTrees
             n_jobs=-1
         )
-
+    elif model_name is Regressor.ExtraTreesRegressor:
+        model = ExtraTreesRegressor(
+            random_state=configs["random_state"],
+            n_estimators=2000,  # You can tune this
+            n_jobs=-1  # Use all cores
+        )
+    elif model_name is Regressor.GradientBoostingRegressor:
+        model = GradientBoostingRegressor(
+            random_state=configs["random_state"],
+            n_estimators=configs['gb_n_estimators'],
+            learning_rate=configs['gb_learning_rate'],
+            max_depth=configs['gb_max_depth'],
+            min_samples_split=configs['gb_min_samples_split'],
+        )
     model.fit(X, y)
     return model
 
@@ -484,6 +497,44 @@ def save_results_locally(results_df, is_grouped_run):
     print(f"\n✅ Saved boxplot to '{plot_filename}'")
     print("\n✅ Local run complete.")
 
+def sweep_train():
+    """Train function for WandB sweep. Loads data, runs CV, logs metrics."""
+    # Load data inside the sweep function to ensure isolation per run
+    x_training_data = pd.read_csv("./data/X_train.csv", skiprows=1, header=None).values[:, 1:]
+    y_training_data = (pd.read_csv("./data/y_train.csv", skiprows=1, header=None).values[:, 1:].ravel())
+    
+    run = wandb.init()
+    config = wandb.config
+    
+    # Override GradientBoostingRegressor hyperparameters from sweep config
+    configs['gb_n_estimators'] = config.n_estimators
+    configs['gb_learning_rate'] = config.learning_rate
+    configs['gb_max_depth'] = config.max_depth
+    configs['gb_min_samples_split'] = config.min_samples_split
+    
+    # Optionally log the updated configs for inspection
+    run.config.update(configs)
+    
+    print(f"🚀 Starting sweep run for GradientBoostingRegressor with params: {config}")
+    
+    cv_df = run_cv_experiment(x_training_data, y_training_data)
+    
+    # Compute and log the primary metric for sweep optimization
+    mean_val_score = cv_df["validation_score"].mean()
+    wandb.log({"val/r2": mean_val_score})
+    
+    # Log additional metrics
+    wandb.log({
+        "mean_train_r2": cv_df["train_score"].mean(),
+        "std_val_r2": cv_df["validation_score"].std(),
+        "std_train_r2": cv_df["train_score"].std(),
+    })
+    
+    # Log detailed results
+    log_results_to_wandb(cv_df, run)
+    
+    wandb.finish()
+
 
 if __name__ == "__main__":
     x_training_data = pd.read_csv("./data/X_train.csv", skiprows=1, header=None).values[:, 1:]
@@ -512,16 +563,59 @@ if __name__ == "__main__":
 
     elif RUN_MODE == RunMode.WANDB:
         # Runs a single CV experiment (using 'configs') and logs to W&B.
-        print(f"🚀 Starting W&B run for: {configs['regression_method']} + {configs['outlier_detection']}")
+        print(f"🚀 Starting W&B run for: {configs['regression_method'].name} + {configs['outlier_detector']['method'].name}")
         with wandb.init(
             project="AML_task1",
             config=configs,
-            tags=["regression", configs["regression_method"].name, configs["outlier_detection"].name],
-            name=f"regressor {configs['regression_method'].name}_{configs['outlier_detection'].name}",
+            tags=["regression", configs["regression_method"].name, configs["outlier_detector"]["method"].name],
+            name=f"regressor {configs['regression_method'].name}_{configs['outlier_detector']['method'].name}",
             notes=f''
+
+
         ) as run:
             cv_df = run_cv_experiment(x_training_data, y_training_data)
             log_results_to_wandb(cv_df, run)
+
+    elif RUN_MODE == RunMode.WANDB_SWEEP:
+        sweep_config = {
+            'method': 'random',  # Options: 'random', 'grid', 'bayes'
+            'metric': {
+                'name': 'val/r2',
+                'goal': 'maximize'
+            },
+            'parameters': {
+                'n_estimators': {
+                    'distribution': 'int_uniform',
+                    'min': 500,
+                    'max': 2000
+                },
+                'learning_rate': {
+                    'distribution': 'uniform',
+                    'min': 0.01,
+                    'max': 0.3
+                },
+                'max_depth': {
+                    'distribution': 'int_uniform',
+                    'min': 3,
+                    'max': 6
+                },
+                'min_samples_split': {
+                    'distribution': 'int_uniform',
+                    'min': 2,
+                    'max': 20
+                }
+                # Add more parameters as needed, e.g., 'subsample': {'min': 0.8, 'max': 1.0}
+            },
+            'project': 'AML_task1',
+            'tags': ['sweep', 'GradientBoostingRegressor']
+        }
+            
+        # Create the sweep
+        sweep_id = wandb.sweep(sweep_config)
+        
+        # Run the agent (adjust 'count' to the number of runs you want)
+        print("🚀 Starting WandB sweep agent...")
+        wandb.agent(sweep_id, function=sweep_train, count=50)  # Run 50 trials; adjust as needed
 
     elif RUN_MODE == RunMode.CURRENT_CONFIG:
         print(f"🚀 Starting single local CV run for: {configs['regression_method'].name} + {configs['outlier_detector']['method'].name}")
