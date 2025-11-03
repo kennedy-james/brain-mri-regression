@@ -4,6 +4,7 @@ from enum import Enum, auto
 class RunMode(Enum):
     final_evaluation = auto() # produce submission file for test data
     wandb = auto() # log to wandb
+    wandb_sweep = auto() # run a wandb sweep for hyperparameter optimization
     grid = auto()   # run all combinations of models and outlier detectors locally
     current_config = auto() # run single CV with current config
     optuna_search = auto()
@@ -32,6 +33,7 @@ class Regressor(Enum):
     extra_trees = auto()
     ridge = auto()
     random_forest_regressor = auto()
+    gradient_boosting = auto()
     stacking = auto()
 
 
@@ -65,6 +67,12 @@ configs = {
         'eval_metric': 'rmse',
         'early_stopping_rounds': 20
     },
+
+    'gb_n_estimators': 1000,
+    'gb_learning_rate': 0.1,
+    'gb_max_depth': 3,
+    'gb_min_samples_split': 2,
+
     'optuna': {
         'load_file': 'best_params_lowering_overfit.json',
         'objective_to_run': 'stacker', # stacker or xbg
