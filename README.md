@@ -52,6 +52,12 @@ make start-notebook
 The `pyproject.toml` file is used to manage the project metadata and dependencies.
 It is the standard used by uv to manage the project.
 
+To activate the optuna visualization server, run
 
+```bash
+make start-optuna-dashboard PATH_TO_STUDY_DB
+```
+
+This will start a local server at `http://localhost:8086` where you can visualize the optimization study.
 
 
