@@ -58,6 +58,7 @@ To activate the optuna visualization server, run
 make start-optuna-dashboard PATH_TO_STUDY_DB
 ```
 
-This will start a local server at `http://localhost:8086` where you can visualize the optimization study.
+This will start a local server at `http://localhost:8080` where you can visualize the optimization study.
+
 
 
