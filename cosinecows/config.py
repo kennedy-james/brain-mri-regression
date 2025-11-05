@@ -1,6 +1,7 @@
 from enum import Enum, auto
 import torch.nn as nn
 from torchmetrics import R2Score
+import torch.optim as opt
 
 class RunMode(Enum):
     final_evaluation = auto() # produce submission file for test data
@@ -39,7 +40,7 @@ class Regressor(Enum):
     gaussian_process = auto()
 
 
-RUNNING_MODE = RunMode.current_config
+RUNNING_MODE = RunMode.optuna_search
 configs = {
     'folds': 10,
     'random_state': 42,
@@ -102,16 +103,20 @@ selection_config = {
 if configs['regression_method'] == Regressor.neural_network:
     regression_config = {
         'nn_architecture': nn.Sequential(
+            nn.Dropout(0.2),
             nn.Linear(300, 150), nn.ReLU(),
             nn.BatchNorm1d(150),
-            nn.Linear(150, 50), nn.ReLU(),
-            nn.BatchNorm1d(50),
-            nn.Linear(50, 1), nn.ReLU()
+            nn.Dropout(0.2),
+            nn.Linear(150, 150), nn.ReLU(),
+            nn.BatchNorm1d(150),
+            nn.Linear(150, 1), nn.ReLU()
         ),
         'nn_parameters': {
-            # 'criterion': R2Score,
-            # batch_size=100,
-            'train_split': None
+            'batch_size': 128,
+            'optimizer': opt.Adamax, # Note: RAdam also good
+            'train_split': None,
+            'lr': 0.01,
+            'max_epochs': 10
         }
     }
 elif configs['regression_method'] in [Regressor.xgb, Regressor.stacking]:
