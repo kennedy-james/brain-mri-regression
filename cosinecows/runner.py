@@ -25,12 +25,12 @@ def run_final_evaluation():
 
     print(f"   Final Model: {configs['regression_method'].name}")
     print(f"   Final Outlier Detector: {configs['outlier_method'].name}")
-    print(f"   Final Selection Percentile: {configs['selection'].get('percentile', 'N/A')}")
+    print(f"   Final Selection Percentile: {configs['selection_percentile']}")
     # --- END NEW ---
 
     x_test = load_test_data()
     final_pipeline_path = REGRESSORS_DIR / 'impKnn-outlierPcaIsofor-featSelect-stacking.pkl'
-    if os.path.isfile(final_pipeline_path):
+    if False:
         print(f"\nLoading pre-trained pipeline from {final_pipeline_path}...")
         pipeline_components = joblib.load(final_pipeline_path)
         imputer = pipeline_components['imputer']
@@ -112,11 +112,14 @@ def run_optuna_search():
         objective_func = objective
         print(f"Tuning SINGLE XGB (study: {study_name})")
 
+
+
     study = optuna.create_study(storage=storage_name, study_name=study_name, direction='maximize', load_if_exists=True)
     # run 50 different trials. may take long
     study.optimize(
         lambda trial: objective_func(trial, x_train, y_train),
-        n_trials=150
+        #n_trials= configs.get('n_trials', 50)
+        n_trials=50
     )
 
     print("\n\n--- 🏆 Optuna Search Complete ---")
@@ -127,14 +130,37 @@ def run_optuna_search():
 
     # Save best params to a file so you can use them later
     best_params_file = f"best_params_{configs['optuna']['objective_to_run']}.json"
-    # save best parameters to wandb
-    wandb.log({"best_params": study.best_params})
-    #log best parameters accuracy
-    wandb.log({"mean_validation_score": study.best_value})
 
     with open(best_params_file, "w") as f:
         json.dump(study.best_params, f, indent=4)
     print(f"\n✅ Best parameters saved to {best_params_file}")
+
+    with wandb.init(
+        project="AML_task1",
+        name=f"best_model_{configs['optuna']['objective_to_run']}_r2_{study.best_value:.4f}",
+        config={
+            **configs,
+            "optuna_study": study_name,
+            "best_params": study.best_params,
+            "mean_validation_score": study.best_value
+        },
+        tags=["best", "optuna", configs['optuna']['objective_to_run']],
+        job_type="final_best"
+    ) as run:
+        wandb.log({
+            "best_r2": study.best_value,
+            #"mean_validation_score": study.best_params,
+            "mean_validation_score": study.best_value,
+            "n_trials_completed": len(study.trials)
+        })
+        # Save best params as artifact
+        artifact = wandb.Artifact(
+            name=f"best-params-{configs['optuna']['objective_to_run']}",
+            type="config"
+        )
+        artifact.add_file(best_params_file)
+        wandb.log_artifact(artifact)
+    print("✅ Best model details logged to W&B.")
 
 
 def run_optuna_config():

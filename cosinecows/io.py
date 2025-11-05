@@ -67,9 +67,9 @@ def load_best_params(json_file="best_params.json"):
             }
 
         # if stacker params are loaded, set regressor to stacking ensemble
-        elif 'selection_percentile' in best_params:
-            configs['regression_method'] = Regressor.stacking
-            print(f"   Set regression_method to: {configs['regression_method'].name}")
+        #elif 'selection_percentile' in best_params:
+        #    configs['regression_method'] = Regressor.stacking
+        #    print(f"   Set regression_method to: {configs['regression_method'].name}")
 
 
     except FileNotFoundError:
