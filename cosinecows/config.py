@@ -1,5 +1,6 @@
 from enum import Enum, auto
-
+import torch.nn as nn
+from torchmetrics import R2Score
 
 class RunMode(Enum):
     final_evaluation = auto() # produce submission file for test data
@@ -35,6 +36,7 @@ class Regressor(Enum):
     random_forest_regressor = auto()
     gradient_boosting = auto()
     stacking = auto()
+    neural_network = auto()
 
 
 RUNNING_MODE = RunMode.current_config
@@ -66,6 +68,16 @@ configs = {
     'xgboost': {
         'eval_metric': 'rmse',
         'early_stopping_rounds': 20
+    },
+    'nn_architecture': nn.Sequential(
+        nn.Linear(300, 150), nn.ReLU(),
+        nn.Linear(150, 50), nn.ReLU(),
+        nn.Linear(50, 1), nn.ReLU()
+    ),
+    'nn_parameters': {
+        'criterion': R2Score,
+        # batch_size=100,
+        'train_split': None
     },
 
     'gb_n_estimators': 1000,
