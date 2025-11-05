@@ -2,6 +2,7 @@
 Train models.
 """
 import pandas as pd
+import numpy as np
 import torch
 from sklearn.ensemble import ExtraTreesRegressor, RandomForestRegressor, StackingRegressor
 from sklearn.linear_model import Ridge
@@ -14,6 +15,8 @@ from xgboost import XGBRegressor
 from skorch import NeuralNetRegressor
 from sklearn.gaussian_process import GaussianProcessRegressor
 from sklearn.gaussian_process.kernels import RationalQuadratic
+from sklearn.pipeline import Pipeline
+from sklearn.compose import TransformedTargetRegressor
 
 
 from cosinecows.config import configs, Regressor
@@ -151,9 +154,21 @@ def fit(X, y):
             n_jobs=-1  # Use all cores
         )
     elif model_name is Regressor.neural_network:
-        model = NeuralNetRegressor(
+        nn = NeuralNetRegressor(
             module=configs["nn_architecture"],
             **configs["nn_parameters"]
+        )
+
+        # Apply transformation to X
+        pipe = Pipeline([
+            ('scale_x', StandardScaler()),
+            ('neural_net', nn),
+        ])
+
+        # Apply transformation for y
+        model = TransformedTargetRegressor(
+            regressor=pipe,
+            transformer=StandardScaler()
         )
 
     if isinstance(model, XGBRegressor):
@@ -161,9 +176,11 @@ def fit(X, y):
             X, y, test_size=0.1, random_state=configs["random_state"]
         )
         model.fit(x_train_sub, y_train_sub, eval_set=[(x_val_sub, y_val_sub)], verbose=False)
-    elif isinstance(model, NeuralNetRegressor):
-        X = torch.tensor(X, dtype=torch.float32)
-        y = torch.tensor(y, dtype=torch.float32).unsqueeze(1)
+    elif model_name is Regressor.neural_network:
+        # skorch / scikit-learn estimators expect NumPy arrays. Ensure float32 to avoid
+        # dtype mismatches between inputs and model parameters (Double vs Float).
+        X = np.asarray(X, dtype=np.float32)
+        y = np.asarray(y, dtype=np.float32).reshape(-1, 1)
         model.fit(X, y)
     else:
         model.fit(X, y)
@@ -248,7 +265,7 @@ def run_cv_experiment(x_data, y_data):
         # pipeline to fit on training set: x_proc, y_proc are processed training data
         imputer, detector, selection, model, x_proc, y_proc = train_model(x_train, y_train, i)
         if configs["regression_method"] is Regressor.neural_network:
-            x_proc = torch.tensor(x_proc, dtype=torch.float32)
+            x_proc = np.asarray(x_proc, dtype=np.float32)
         y_train_pred = model.predict(x_proc)
         train_score = r2_score(y_proc, y_train_pred)
 
@@ -259,7 +276,7 @@ def run_cv_experiment(x_data, y_data):
         y_val = y_val[val_mask]
         x_val_selected = selection.transform(x_val_filt)
         if configs["regression_method"] is Regressor.neural_network:
-            x_val_selected = torch.tensor(x_val_selected, dtype=torch.float32)
+            x_val_selected = np.asarray(x_val_selected, dtype=np.float32)
         y_val_pred = model.predict(x_val_selected)
         val_score = r2_score(y_val, y_val_pred)
         print(f"Fold {i}: Train R² = {train_score:.4f}, Validation R² = {val_score:.4f}")

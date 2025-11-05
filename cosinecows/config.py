@@ -39,13 +39,13 @@ class Regressor(Enum):
     gaussian_process = auto()
 
 
-RUNNING_MODE = RunMode.optuna_search
+RUNNING_MODE = RunMode.current_config
 configs = {
     'folds': 10,
     'random_state': 42,
     'impute_method': Imputer.knn,
     'outlier_method': OutlierDetector.pca_isoforest,
-    'regression_method': Regressor.stacking,
+    'regression_method': Regressor.neural_network,
     'optuna': {
         'load_file': 'best_params_lowering_overfit.json',
         'objective_to_run': 'xgb', # stacker or xbg
