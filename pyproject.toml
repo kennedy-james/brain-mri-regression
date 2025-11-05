@@ -5,7 +5,10 @@ description = "Regression task on features of RMI scan to predict brain age"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
+    "ipympl>=0.9.8",
     "joblib>=1.5.2",
+    "jupyterlab>=4.4.10",
+    "jupyterlab-widgets>=3.0.16",
     "matplotlib>=3.10.7",
     "notebook>=7.4.7",
     "numpy>=2.3.4",
@@ -27,6 +30,7 @@ dependencies = [
 [dependency-groups]
 dev = [
     "ruff>=0.14.3",
+    "scipy-stubs>=1.16.3.0",
 ]
 
 [build-system]
