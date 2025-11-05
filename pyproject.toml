@@ -17,6 +17,9 @@ dependencies = [
     "pyod>=2.0.5",
     "scikit-learn>=1.7.2",
     "seaborn>=0.13.2",
+    "skorch>=1.2.0",
+    "torch>=2.9.0",
+    "torchmetrics>=1.8.2",
     "wandb>=0.22.2",
     "xgboost>=3.1.1",
 ]

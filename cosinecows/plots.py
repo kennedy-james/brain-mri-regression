@@ -18,7 +18,7 @@ def generate_plot(cv_df):
     fig, ax = plt.subplots(figsize=(11, 13))
     sns.boxplot(data=cv_df[["train_score", "validation_score"]], ax=ax)
     ax.set_title(
-        f"CV Results: {configs['regression_method'].name} + {configs['outlier_detector']['method'].name} Detector + {'Feature Selection' if configs['selection']['is_enabled'] else 'No Feature Selection'} + {configs['impute_method'].name} Imputation")
+        f"CV Results: {configs['regression_method'].name} + {configs['outlier_method'].name} Detector + {'Feature Selection' if configs['selection_is_enabled'] else 'No Feature Selection'} + {configs['impute_method'].name} Imputation")
     ax.set_ylabel("R² Score")
     ax.set_xlabel("Score Type")
     return fig

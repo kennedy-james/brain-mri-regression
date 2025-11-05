@@ -18,16 +18,16 @@ def objective(trial, x, y):
     outlier_method_name = trial.suggest_categorical(
         'outlier_method_name', ['isoforest', 'zscore']
     )
-    configs['outlier_detector']['method'] = OutlierDetector[outlier_method_name]
+    configs['outlier_method'] = OutlierDetector[outlier_method_name]
 
     # --- 2. Tune Pipeline Hyperparameters (Conditional) ---
     if outlier_method_name == 'isoforest':
         # Note: We are tuning the correct contamination parameter now
-        configs['outlier_detector']['isoforest_contamination'] = trial.suggest_float(
+        configs['isoforest_contamination'] = trial.suggest_float(
             'isoforest_contamination', low=0.01, high=0.1
         )
     elif outlier_method_name == 'zscore':
-        configs['outlier_detector']['zscore_std'] = trial.suggest_float(
+        configs['zscore_std'] = trial.suggest_float(
             'zscore_std', low=1.0, high=2.5
         )
 
@@ -75,16 +75,16 @@ def objective_stacker(trial, x, y):
     # Tune Feature Selection Percentile
     # This is the most important parameter to tune.
     percentile = trial.suggest_int('selection_percentile', 20, 60)
-    configs['selection']['percentile'] = percentile
+    configs['selection_percentile'] = percentile
 
     # Tune Outlier Detector (the one you are currently using)
-    configs['outlier_detector']['method'] = OutlierDetector.pca_isoforest
+    configs['outlier_method'] = OutlierDetector.pca_isoforest
 
     contamination = trial.suggest_float('pca_isoforest_contamination', 0.01, 0.05)
-    configs['outlier_detector']['pca_isoforest_contamination'] = contamination
+    configs['pca_isoforest_contamination'] = contamination
 
     n_components = trial.suggest_int('pca_n_components', 5, 20)
-    configs['outlier_detector']['pca_n_components'] = n_components
+    configs['pca_n_components'] = n_components
 
     # --- 2. Set Model ---
     # We are explicitly tuning the pipeline FOR the stacking regressor

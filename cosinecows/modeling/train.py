@@ -2,6 +2,7 @@
 Train models.
 """
 import pandas as pd
+import torch
 from sklearn.ensemble import ExtraTreesRegressor, RandomForestRegressor, StackingRegressor
 from sklearn.linear_model import Ridge
 from sklearn.metrics import r2_score
@@ -10,6 +11,7 @@ from sklearn.pipeline import make_pipeline
 from sklearn.preprocessing import StandardScaler
 from sklearn.svm import SVR
 from xgboost import XGBRegressor
+from skorch import NeuralNetRegressor
 
 from cosinecows.config import configs, Regressor
 from cosinecows.feature_selection import PassthroughSelector, feature_selection
@@ -49,8 +51,8 @@ def fit(X, y):
                 reg_alpha=0.5,
                 reg_lambda=3.0,
                 learning_rate=0.03,
-                eval_metric=configs['xgboost']['eval_metric'],
-                early_stopping_rounds=configs['xgboost']['early_stopping_rounds'],
+                eval_metric=configs['xgb_eval_metric'],
+                early_stopping_rounds=configs['xgb_early_stopping_rounds'],
                 verbosity=0
             )
     elif model_name is Regressor.extra_trees:
@@ -86,7 +88,7 @@ def fit(X, y):
                 reg_alpha=0.2,
                 reg_lambda=2.0,
                 learning_rate=0.02,
-                eval_metric=configs['xgboost']['eval_metric'],
+                eval_metric=configs['xgb_eval_metric'],
                 verbosity=0
             )),
             ('extra_trees', ExtraTreesRegressor(
@@ -129,12 +131,21 @@ def fit(X, y):
             cv=5,  # Use 5 folds, 10 is too slow
             n_jobs=-1  # Use all cores
         )
+    elif model_name is Regressor.neural_network:
+        model = NeuralNetRegressor(
+            module=configs["nn_architecture"],
+            **configs["nn_parameters"]
+        )
 
     if isinstance(model, XGBRegressor):
         x_train_sub, x_val_sub, y_train_sub, y_val_sub = train_test_split(
             X, y, test_size=0.1, random_state=configs["random_state"]
         )
         model.fit(x_train_sub, y_train_sub, eval_set=[(x_val_sub, y_val_sub)], verbose=False)
+    elif isinstance(model, NeuralNetRegressor):
+        X = torch.tensor(X, dtype=torch.float32)
+        y = torch.tensor(y, dtype=torch.float32).unsqueeze(1)
+        model.fit(X, y)
     else:
         model.fit(X, y)
 
@@ -160,7 +171,7 @@ def train_model(X, y, i=None):
     # === THIS IS THE FIX ===
     # The logic is now simple: if it's a tree model, skip selection.
     model_name = configs["regression_method"]
-    if not configs['selection']['is_enabled'] and model_name in [Regressor.xgb, Regressor.extra_trees, Regressor.random_forest_regressor]:
+    if not configs['selection_is_enabled'] and model_name in [Regressor.xgb, Regressor.extra_trees, Regressor.random_forest_regressor]:
         print("Using PassthroughSelector (skipping feature selection for tree-based model).")
         selection = PassthroughSelector()
         X_proc = selection.fit_transform(X_filt)
@@ -177,10 +188,10 @@ def train_model(X, y, i=None):
         # This will now correctly run for Ridge or Stacking
         print("Running feature_selection pipeline for non-tree model...")
         selection = feature_selection(X_filt, y_proc,
-                                      thresh_var=configs['selection']['thresh_var'],
-                                      thresh_corr=configs['selection']['thresh_corr'],
-                                      rf_max_feats=configs['selection']['rf_max_feats'],
-                                      percentile=configs['selection']['percentile']
+                                      thresh_var=configs['selection_thresh_var'],
+                                      thresh_corr=configs['selection_thresh_corr'],
+                                      rf_max_feats=configs['selection_rf_max_feats'],
+                                      percentile=configs['selection_percentile']
                                       )
         X_proc = selection.transform(X_filt)
         print(f"Selected features: {X_proc.shape[1]}")
@@ -203,7 +214,7 @@ def run_cv_experiment(x_data, y_data):
     cv_df: A DataFrame with detailed results for each fold.
     """
     model_name = configs["regression_method"]
-    outlier_method = configs["outlier_detector"]['method']
+    outlier_method = configs['outlier_method']
     cv_results_list = []
     print(f"\n--- 🚀 Running CV for: {model_name.name} + {outlier_method.name} ---")
     folds = KFold(n_splits=configs["folds"], shuffle=True, random_state=configs["random_state"])
@@ -217,6 +228,8 @@ def run_cv_experiment(x_data, y_data):
 
         # pipeline to fit on training set: x_proc, y_proc are processed training data
         imputer, detector, selection, model, x_proc, y_proc = train_model(x_train, y_train, i)
+        if configs["regression_method"] is Regressor.neural_network:
+            x_proc = torch.tensor(x_proc, dtype=torch.float32)
         y_train_pred = model.predict(x_proc)
         train_score = r2_score(y_proc, y_train_pred)
 
@@ -226,6 +239,8 @@ def run_cv_experiment(x_data, y_data):
         x_val_filt = x_val_imputed[val_mask, :]
         y_val = y_val[val_mask]
         x_val_selected = selection.transform(x_val_filt)
+        if configs["regression_method"] is Regressor.neural_network:
+            x_val_selected = torch.tensor(x_val_selected, dtype=torch.float32)
         y_val_pred = model.predict(x_val_selected)
         val_score = r2_score(y_val, y_val_pred)
         print(f"Fold {i}: Train R² = {train_score:.4f}, Validation R² = {val_score:.4f}")

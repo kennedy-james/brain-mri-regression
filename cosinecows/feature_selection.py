@@ -7,6 +7,7 @@ from sklearn.base import BaseEstimator, TransformerMixin
 from sklearn.ensemble import RandomForestRegressor
 from sklearn.feature_selection import VarianceThreshold, SelectPercentile, mutual_info_regression, SelectFromModel
 from sklearn.pipeline import make_pipeline
+from sklearn.preprocessing import StandardScaler
 
 from cosinecows.config import configs
 
@@ -75,7 +76,8 @@ def feature_selection(x_train, y_train, thresh_var=0.01, thresh_corr=0.95, rf_ma
         PrintShape(message="after CorrelationRemover"),  # Logs after this step
         SelectPercentile(score_func=mutual_info_regression, percentile=40),  # equivalent to KBest=200, more robust
         PrintShape(message="after SelectPercentile"),  # Logs after this step
-        rf_selector  # non-linear embedded selection (RF instead of Lasso)
+        rf_selector,  # non-linear embedded selection (RF instead of Lasso)
+        StandardScaler()
     )
     selection.fit(x_train, y_train)
     return selection

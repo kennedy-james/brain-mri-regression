@@ -38,9 +38,9 @@ def outlier_detection(X, y):
 
         return wrapped
 
-    method = configs['outlier_detector']['method']
+    method = configs['outlier_method']
     if method is OutlierDetector.zscore:
-        threshold = configs['outlier_detector']['zscore_std'] # std devs
+        threshold = configs['zscore_std'] # std devs
         print(f"Using z-score detector (stateful, mean-based, threshold={threshold})")
         mean_train = np.nanmean(X, axis=0)
         std_train = np.nanstd(X, axis=0)
@@ -59,7 +59,7 @@ def outlier_detection(X, y):
         get_detector = safe_detector(lambda X_data: clf.predict(X_data) == 0) # inliers are labeled 0, outliers 1
 
     elif method is OutlierDetector.isoforest:
-        iso = IsolationForest(contamination=configs['outlier_detector']['isoforest_contamination'], random_state=configs["random_state"])
+        iso = IsolationForest(contamination=configs['isoforest_contamination'], random_state=configs["random_state"])
         iso.fit(X)
         print(f"Using IsolationForest (stateful, contamination={iso.contamination})")
         get_detector = safe_detector(lambda X_data: iso.predict(X_data) == 1) # inliers are labeled 1, outliers -1
@@ -76,11 +76,11 @@ def outlier_detection(X, y):
         n_components_pca = 2  # hyperparam
         pca_svm_pipeline = make_pipeline(
             StandardScaler(),
-            PCA(n_components=configs['outlier_detector']['pca_n_components'], random_state=configs["random_state"]),
-            OneClassSVM(nu=configs['outlier_detector']['pca_svm_nu'], kernel='rbf', gamma=configs['outlier_detector']['pca_svm_gamma'])  # rbf is fast on low-dim data
+            PCA(n_components=configs['pca_n_components'], random_state=configs["random_state"]),
+            OneClassSVM(nu=configs['pca_svm_nu'], kernel='rbf', gamma=configs['pca_svm_gamma'])  # rbf is fast on low-dim data
         )
 
-        print(f"Using PCA+SVM detector (stateful, n_components={n_components_pca}, nu={configs['outlier_detector']['pca_svm_nu']}, gamma={configs['outlier_detector']['pca_svm_gamma']})")
+        print(f"Using PCA+SVM detector (stateful, n_components={n_components_pca}, nu={configs['pca_svm_nu']}, gamma={configs['pca_svm_gamma']})")
         pca_svm_pipeline.fit(X)
         get_detector = safe_detector(lambda X_data: pca_svm_pipeline.predict(X_data) == 1) # inliers 1, outliers -1
 
@@ -88,10 +88,10 @@ def outlier_detection(X, y):
         # IsoForest is not sensitive to scale, so StandardScaler isn't  strictly required for the model, but for PCA.
         pca_isoforest_pipeline = make_pipeline(
             StandardScaler(),
-            PCA(n_components=configs['outlier_detector']['pca_n_components'], random_state=configs["random_state"]),
-            IsolationForest(contamination=configs['outlier_detector']['pca_isoforest_contamination'], random_state=configs["random_state"])
+            PCA(n_components=configs['pca_n_components'], random_state=configs["random_state"]),
+            IsolationForest(contamination=configs['pca_isoforest_contamination'], random_state=configs["random_state"])
         )
-        print(f"Using PCA+IsolationForest detector (stateful, n_components={configs['outlier_detector']['pca_n_components']}, contamination={configs['outlier_detector']['pca_isoforest_contamination']})")
+        print(f"Using PCA+IsolationForest detector (stateful, n_components={configs['pca_n_components']}, contamination={configs['pca_isoforest_contamination']})")
         pca_isoforest_pipeline.fit(X)
         get_detector = safe_detector(lambda X_data: pca_isoforest_pipeline.predict(X_data) == 1) # inliers 1, outliers -1
 
