@@ -158,7 +158,7 @@ def run_optuna_search():
     # run 50 different trials. may take long
     study.optimize(
         lambda trial: objective_func(trial, x_train, y_train),
-        n_trials=50
+        n_trials=150
     )
 
     print("\n\n--- 🏆 Optuna Search Complete ---")
@@ -169,6 +169,11 @@ def run_optuna_search():
 
     # Save best params to a file so you can use them later
     best_params_file = f"best_params_{configs['optuna']['objective_to_run']}.json"
+    # save best parameters to wandb
+    wandb.log({"best_params": study.best_params})
+    #log best parameters accuracy
+    wandb.log({"mean_validation_score": study.best_value})
+
     with open(best_params_file, "w") as f:
         json.dump(study.best_params, f, indent=4)
     print(f"\n✅ Best parameters saved to {best_params_file}")

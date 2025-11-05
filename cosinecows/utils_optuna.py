@@ -1,5 +1,6 @@
 from cosinecows.config import Imputer, configs, OutlierDetector, Regressor
 from cosinecows.modeling.train import run_cv_experiment
+from sklearn.gaussian_process.kernels import RationalQuadratic
 
 
 def objective(trial, x, y):
@@ -9,16 +10,14 @@ def objective(trial, x, y):
     """
 
     # --- 1. Tune Pipeline Steps ---
-    impute_method_name = trial.suggest_categorical(
-        'impute_method', ['knn', 'iterative']
-    )
+    #impute_method_name = trial.suggest_categorical('impute_method', ['knn', 'iterative'])
+    impute_method_name = 'knn'  # Fix to KNN for now
     configs['impute_method'] = Imputer[impute_method_name]
 
     # We will only tune the full-data, robust outlier detectors
-    outlier_method_name = trial.suggest_categorical(
-        'outlier_method_name', ['isoforest', 'zscore']
-    )
-    configs['outlier_method'] = OutlierDetector[outlier_method_name]
+    #outlier_method_name = trial.suggest_categorical('outlier_method_name', ['pca_isoforest', 'zscore'])
+    outlier_method_name = 'pca_isoforest'  # Fix to PCA + IsoForest for now
+    configs['outlier_detector']['method'] = OutlierDetector[outlier_method_name]
 
     # --- 2. Tune Pipeline Hyperparameters (Conditional) ---
     if outlier_method_name == 'isoforest':
@@ -33,25 +32,36 @@ def objective(trial, x, y):
 
     # --- 3. Tune Model (XGBoost) ---
     # We hard-code the regressor, which will trigger the PassthroughSelector
-    configs['regression_method'] = Regressor.xgb
+    configs['regression_method'] = Regressor.xgb # Regressor.gaussian_process
 
     # Tune XGBoost parameters for a HIGH-DIMENSIONAL (832 features) dataset
-    configs['regression_params'] = {
-        'random_state': configs["random_state"],
-        'n_estimators': trial.suggest_int('n_estimators', low=100, high=500),
-        'max_depth': trial.suggest_int('max_depth', low=3, high=8),
-        'min_child_weight': trial.suggest_int('min_child_weight', low=10, high=25),
-        'gamma': trial.suggest_float('gamma', low=0.5, high=3.0),
-        'subsample': trial.suggest_float('subsample', low=0.6, high=1.0),
-        'colsample_bytree': trial.suggest_float('colsample_bytree', low=0.3, high=0.7),
-        'reg_alpha': trial.suggest_float('reg_alpha', low=0.1, high=2.5),
-        'reg_lambda': trial.suggest_float('reg_lambda', low=2.0, high=6.0),  # Higher L2 for high-D
-        'learning_rate': trial.suggest_float('learning_rate', low=0.01, high=0.1, log=True),
-        'verbosity': 0
-    }
+    if configs['regression_method'] == Regressor.xgb:
+        configs['regression_params'] = {
+            'random_state': configs["random_state"],
+            'n_estimators': trial.suggest_int('n_estimators', low=400, high=2500),
+            'max_depth': trial.suggest_int('max_depth', low=4, high=9),
+            'min_child_weight': trial.suggest_int('min_child_weight', low=10, high=25),
+            'gamma': trial.suggest_float('gamma', low=0.5, high=3.0),
+            'subsample': trial.suggest_float('subsample', low=0.65, high=1.0),
+            'colsample_bytree': trial.suggest_float('colsample_bytree', low=0.3, high=1.0), 
+            'reg_alpha': trial.suggest_float('reg_alpha', low=0.1, high=2.5),
+            #'reg_alpha': 2,
+            'reg_lambda': trial.suggest_float('reg_lambda', low=2.0, high=6.0),  # Higher L2 for high-D
+            #'reg_lambda': 4.0,
+            'learning_rate': trial.suggest_float('learning_rate', low=0.01, high=0.1, log=True),
+            #'learning_rate': 0.05,
+            'verbosity': 0
+        }
+    if configs['regression_method'] == Regressor.gaussian_process:
+        configs['regression_params'] = {
+            'random_state': configs["random_state"],
+            'length_scale': trial.suggest_float('length_scale', low=4, high=10),
+            'alpha': trial.suggest_float('alpha', low=1.0e-10, high=1.0e-7, log=True), 
+
+        }
 
     # --- 4. Run the Experiment ---
-    configs['folds'] = 3  # use fewer folds for faster tuning.
+    configs['folds'] = 4  # use fewer folds for faster tuning.
 
     try:
         cv_df = run_cv_experiment(x, y)
@@ -102,5 +112,4 @@ def objective_stacker(trial, x, y):
         return -1.0  # Return a very bad score
 
     return mean_val_score
-
 

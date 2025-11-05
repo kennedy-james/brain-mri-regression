@@ -37,9 +37,10 @@ class Regressor(Enum):
     gradient_boosting = auto() # TODO: Graident boosting doesn't actually seem to be implemented?
     stacking = auto()
     neural_network = auto()
+    gaussian_process = auto()
 
 
-RUNNING_MODE = RunMode.current_config
+RUNNING_MODE = RunMode.optuna_search
 configs = {
     'folds': 10,
     'random_state': 42,
@@ -48,7 +49,7 @@ configs = {
     'regression_method': Regressor.stacking,
     'optuna': {
         'load_file': 'best_params_lowering_overfit.json',
-        'objective_to_run': 'stacker', # stacker or xbg
+        'objective_to_run': 'xgb', # stacker or xbg
     }
 }
 

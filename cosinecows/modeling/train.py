@@ -12,6 +12,9 @@ from sklearn.preprocessing import StandardScaler
 from sklearn.svm import SVR
 from xgboost import XGBRegressor
 from skorch import NeuralNetRegressor
+from sklearn.gaussian_process import GaussianProcessRegressor
+from sklearn.gaussian_process.kernels import RationalQuadratic
+
 
 from cosinecows.config import configs, Regressor
 from cosinecows.feature_selection import PassthroughSelector, feature_selection
@@ -55,6 +58,22 @@ def fit(X, y):
                 early_stopping_rounds=configs['xgb_early_stopping_rounds'],
                 verbosity=0
             )
+    elif model_name is Regressor.gaussian_process:
+        if 'regression_params' in configs:
+            print("Using tuned GPR parameters from Optuna...")
+            model = GaussianProcessRegressor(**configs['regression_params'])
+            kernel = RationalQuadratic(length_scale=configs['regression_params']['length_scale'],
+                                       alpha=configs['regression_params']['alpha'])
+        else:
+            print("Using default GPR parameters...")
+            model = GaussianProcessRegressor(
+                random_state=configs["random_state"],
+                kernel=RationalQuadratic(length_scale=1.0, alpha=1.0)
+            )
+        # Using RationalQuadratic kernel for flexibility
+        kernel = RationalQuadratic(length_scale=1.0, alpha=1.0)
+        model = GaussianProcessRegressor(kernel=kernel, random_state=configs["random_state"])
+
     elif model_name is Regressor.extra_trees:
         model = ExtraTreesRegressor(
             random_state=configs["random_state"],
