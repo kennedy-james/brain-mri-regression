@@ -40,15 +40,15 @@ class Regressor(Enum):
     gaussian_process = auto()
 
 
-RUNNING_MODE = RunMode.optuna_search
+RUNNING_MODE = RunMode.final_evaluation
 configs = {
     'folds': 10,
     'random_state': 42,
     'impute_method': Imputer.knn,
     'outlier_method': OutlierDetector.pca_isoforest,
-    'regression_method': Regressor.stacking,
+    'regression_method': Regressor.gaussian_process,
     'optuna': {
-        'load_file': 'best_params_lowering_overfit.json',
+        'load_file': 'best_params_xgb.json',
         'objective_to_run': 'xgb', # stacker or xbg
     }
 }
@@ -95,8 +95,8 @@ selection_config = {
     'selection_is_enabled': True,
     'selection_thresh_var': 0.01,
     'selection_thresh_corr': 0.90,
-    'selection_rf_max_feats': 300,
-    'selection_percentile': 40
+    'selection_rf_max_feats': 44,
+    'selection_percentile': 32
 }
 
 # Add configuration for regression
@@ -127,7 +127,15 @@ elif configs['regression_method'] == Regressor.gradient_boosting:
         'gb_max_depth': 3,
         'gb_min_samples_split': 2
     }
+elif configs['regression_method'] == Regressor.gaussian_process:
+        regression_config = {
+            'length_scale': 6.124209435262154,
+            'alpha': 0.669737299146556,
+            'gp_alpha': 2.965074241784881e-09
+        }
 else:
+
+
     regression_config = {}
 
 # Generate final configs file from components

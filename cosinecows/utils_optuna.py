@@ -1,6 +1,7 @@
 from cosinecows.config import Imputer, configs, OutlierDetector, Regressor
 from cosinecows.modeling.train import run_cv_experiment
 from sklearn.gaussian_process.kernels import RationalQuadratic
+#catboost
 
 
 def objective(trial, x, y):
@@ -17,7 +18,7 @@ def objective(trial, x, y):
     # We will only tune the full-data, robust outlier detectors
     #outlier_method_name = trial.suggest_categorical('outlier_method_name', ['pca_isoforest', 'zscore'])
     outlier_method_name = 'pca_isoforest'  # Fix to PCA + IsoForest for now
-    configs['outlier_detector']['method'] = OutlierDetector[outlier_method_name]
+    configs['outlier_method'] = OutlierDetector.pca_isoforest
 
     # --- 2. Tune Pipeline Hyperparameters (Conditional) ---
     if outlier_method_name == 'isoforest':
@@ -30,9 +31,10 @@ def objective(trial, x, y):
             'zscore_std', low=1.0, high=2.5
         )
 
+    
+
     # --- 3. Tune Model (XGBoost) ---
     # We hard-code the regressor, which will trigger the PassthroughSelector
-    configs['regression_method'] = Regressor.xgb # Regressor.gaussian_process
 
     # Tune XGBoost parameters for a HIGH-DIMENSIONAL (832 features) dataset
     if configs['regression_method'] == Regressor.xgb:
@@ -53,11 +55,28 @@ def objective(trial, x, y):
             'verbosity': 0
         }
     if configs['regression_method'] == Regressor.gaussian_process:
+        #configs['selection_percentile'] = trial.suggest_int('selection_percentile', 15, 50)
+        #configs['selection_rf_max_feats'] = trial.suggest_int('selection_rf_max_feats', 25, 125)
+        #configs['regression_params'] = {
+        #    'random_state': configs["random_state"],
+        #    'length_scale': trial.suggest_float('length_scale', low=4, high=10),
+        #    'alpha': trial.suggest_float('alpha', low=0.4, high=0.8),
+        #    'gp_alpha': trial.suggest_float('gp_alpha', low=1.0e-10, high=1.0e-7, log=True),
+        #}
+        #{'selection_percentile': 32, 'selection_rf_max_feats': 44, 'length_scale': 6.124209435262154, 'alpha': 0.669737299146556, 'gp_alpha': 2.965074241784881e-09}
+        configs['selection_percentile'] = 32
+        configs['selection_rf_max_feats'] = 44
+        configs['regression_params']['length_scale'] = 6.124209435262154
+        configs['regression_params']['alpha'] = 0.669737299146556
+        configs['regression_params']['gp_alpha'] = 2.965074241784881e-09
+
+    if configs['regression_method'] == Regressor.catboost:
         configs['regression_params'] = {
             'random_state': configs["random_state"],
-            'length_scale': trial.suggest_float('length_scale', low=4, high=10),
-            'alpha': trial.suggest_float('alpha', low=1.0e-10, high=1.0e-7, log=True), 
-
+            'iterations': trial.suggest_int('iterations', low=100, high=1000),
+            'learning_rate': trial.suggest_float('learning_rate', low=0.01, high=0.3, log=True),
+            'depth': trial.suggest_int('depth', low=4, high=10),
+            'l2_leaf_reg': trial.suggest_float('l2_leaf_reg', low=1.0, high=10.0),
         }
 
     # --- 4. Run the Experiment ---

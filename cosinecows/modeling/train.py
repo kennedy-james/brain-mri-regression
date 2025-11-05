@@ -14,6 +14,8 @@ from xgboost import XGBRegressor
 from skorch import NeuralNetRegressor
 from sklearn.gaussian_process import GaussianProcessRegressor
 from sklearn.gaussian_process.kernels import RationalQuadratic
+from sklearn.compose import TransformedTargetRegressor
+from sklearn.pipeline import Pipeline
 
 
 from cosinecows.config import configs, Regressor
@@ -59,20 +61,31 @@ def fit(X, y):
                 verbosity=0
             )
     elif model_name is Regressor.gaussian_process:
+
         if 'regression_params' in configs:
             print("Using tuned GPR parameters from Optuna...")
-            model = GaussianProcessRegressor(**configs['regression_params'])
-            kernel = RationalQuadratic(length_scale=configs['regression_params']['length_scale'],
-                                       alpha=configs['regression_params']['alpha'])
+            kernel = RationalQuadratic(length_scale=configs['regression_config']['length_scale'],
+                                       alpha=configs['regression_config']['alpha'])
+            model = GaussianProcessRegressor(random_state=configs["random_state"], alpha=configs['regression_config']['gp_alpha'],
+                                           #n_restarts_optimizer=5, 
+                                           kernel=kernel)
+
         else:
             print("Using default GPR parameters...")
             model = GaussianProcessRegressor(
                 random_state=configs["random_state"],
                 kernel=RationalQuadratic(length_scale=1.0, alpha=1.0)
             )
-        # Using RationalQuadratic kernel for flexibility
-        kernel = RationalQuadratic(length_scale=1.0, alpha=1.0)
-        model = GaussianProcessRegressor(kernel=kernel, random_state=configs["random_state"])
+        
+        pipe = Pipeline([
+            ('scale_x', StandardScaler()),
+            ('gpr', model)
+        ])
+
+        model = TransformedTargetRegressor(
+            regressor=pipe,
+            transformer=StandardScaler()
+        )
 
     elif model_name is Regressor.extra_trees:
         model = ExtraTreesRegressor(
@@ -194,6 +207,8 @@ def train_model(X, y, i=None):
         print("Using PassthroughSelector (skipping feature selection for tree-based model).")
         selection = PassthroughSelector()
         X_proc = selection.fit_transform(X_filt)
+        #scaler = StandardScaler()
+        #X_proc = scaler.fit_transform(X_proc)
         print(f"Selected features: {X_proc.shape[1]} (all)")
 
     # avoid feature selection for tree-based models
