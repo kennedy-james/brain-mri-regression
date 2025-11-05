@@ -1,6 +1,6 @@
 from enum import Enum, auto
 import torch.nn as nn
-from torchmetrics import R2Score
+
 
 class RunMode(Enum):
     final_evaluation = auto() # produce submission file for test data
@@ -53,43 +53,43 @@ configs = {
 }
 
 # Add configuration for imputation
-if configs['impute_method'] == Imputer.knn:
-    imputation_config = {
-        'knn_neighbours': 75,
-        'knn_weight': 'uniform',  # possible neighbour weights for average (uniform, distance)
-    }
-elif configs['impute_method'] == Imputer.iterative:
-    imputation_config = {
-        'iterative_estimator': 'Ridge()',  # Iterative configuration
-        'iterative_iter': 1,  # Iterative configuration
-    }
-else:
-    imputation_config = {}
+match configs['impute_method']:
+    case Imputer.knn:
+        imputation_config = {
+            'knn_neighbours': 75,
+            'knn_weight': 'uniform',  # possible neighbour weights for average (uniform, distance)
+        }
+    case Imputer.iterative:
+        imputation_config = {
+            'iterative_estimator': 'Ridge()',  # Iterative configuration
+            'iterative_iter': 1,  # Iterative configuration
+        }
+    case _:
+        imputation_config = {}
 
-# Add configuration for outlier detection
-if configs['outlier_method'] == OutlierDetector.pca_isoforest:
-    outlier_config = {
-        'pca_isoforest_contamination': 0.045, # proportion of outliers
-        'pca_n_components': 2,
-    }
-elif configs['outlier_method'] == OutlierDetector.pca_svm:
-    outlier_config = {
-        'pca_n_components': 2,
-        'pca_svm_nu': 0.05,    # "expected amount of outliers to discard"
-        'pca_svm_gamma': 0.0003, # blurriness of internal holes within clusters
-    }
-elif configs['outlier_method'] == OutlierDetector.zscore:
-    outlier_config = {
-        'zscore_std': 1
-    }
-elif configs['outlier_method'] == OutlierDetector.isoforest:
-    outlier_config = {
-        'isoforest_contamination': 0.05,
-    }
-else:
-    outlier_config = {}
+match configs['outlier_method']:
+    case OutlierDetector.pca_isoforest:
+        outlier_config = {
+            'pca_isoforest_contamination': 0.045, # proportion of outliers
+            'pca_n_components': 2,
+        }
+    case OutlierDetector.pca_svm:
+        outlier_config = {
+            'pca_n_components': 2,
+            'pca_svm_nu': 0.05,     # expected amount of outliers to discard
+            'pca_svm_gamma': 0.0003, # blurriness of internal holes within clusters
+        }
+    case OutlierDetector.zscore:
+        outlier_config = {
+            'zscore_std': 1,
+        }
+    case OutlierDetector.isoforest:
+        outlier_config = {
+            'isoforest_contamination': 0.05,
+        }
+    case _:
+        outlier_config = {}
 
-# Add configuration for feature selection
 selection_config = {
     'selection_is_enabled': True,
     'selection_thresh_var': 0.01,
@@ -98,46 +98,44 @@ selection_config = {
     'selection_percentile': 32
 }
 
-# Add configuration for regression
-if configs['regression_method'] == Regressor.neural_network:
-    regression_config = {
-        'nn_architecture': nn.Sequential(
-            nn.Linear(300, 150), nn.ReLU(),
-            nn.BatchNorm1d(150),
-            nn.Linear(150, 50), nn.ReLU(),
-            nn.BatchNorm1d(50),
-            nn.Linear(50, 1), nn.ReLU()
-        ),
-        'nn_parameters': {
-            # 'criterion': R2Score,
-            # batch_size=100,
-            'train_split': None
+match configs['regression_method']:
+    case Regressor.neural_network:
+        regression_config = {
+            'nn_architecture': nn.Sequential(
+                nn.Linear(300, 150), nn.ReLU(),
+                nn.BatchNorm1d(150),
+                nn.Linear(150, 50), nn.ReLU(),
+                nn.BatchNorm1d(50),
+                nn.Linear(50, 1), nn.ReLU()
+            ),
+            'nn_parameters': {
+                # 'criterion': R2Score,
+                # batch_size=100,
+                'train_split': None
+            }
         }
-    }
-elif configs['regression_method'] in [Regressor.xgb, Regressor.stacking]:
-    regression_config = {
+    case Regressor.xgb | Regressor.stacking:
+        regression_config = {
             'xgb_eval_metric': 'rmse',
             'xgb_early_stopping_rounds': 20
-    }
-elif configs['regression_method'] == Regressor.gradient_boosting:
-    regression_config = {
-        'gb_n_estimators': 1000,
-        'gb_learning_rate': 0.1,
-        'gb_max_depth': 3,
-        'gb_min_samples_split': 2
-    }
-elif configs['regression_method'] == Regressor.gaussian_process:
+        }
+    case Regressor.gradient_boosting:
+        regression_config = {
+            'gb_n_estimators': 1000,
+            'gb_learning_rate': 0.1,
+            'gb_max_depth': 3,
+            'gb_min_samples_split': 2
+        }
+    case Regressor.gaussian_process:
         regression_config = {
             'length_scale': 6.124209435262154,
             'alpha': 0.669737299146556,
             'gp_alpha': 2.965074241784881e-09
         }
-else:
+    case _:
+        regression_config = {}
 
-
-    regression_config = {}
-
-# Generate final configs file from components
+# generate final configs file from components
 configs = {
     **configs,
     **imputation_config,
