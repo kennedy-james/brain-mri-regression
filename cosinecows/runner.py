@@ -11,7 +11,7 @@ from cosinecows.dataset import RAW_DATA_DIR, PROCESSED_DATA_DIR
 from cosinecows.io import load_best_params, save_results_locally
 from cosinecows.modeling.train import train_model, run_cv_experiment
 from cosinecows.utils_optuna import objective_stacker, objective
-from cosinecows.utils_wandb import log_results_to_wandb, sweep_train
+from cosinecows.utils_wandb import log_results_to_wandb
 
 print('Loading training data (optuna global access)...')
 x_train, y_train = load_train_data()
@@ -73,48 +73,6 @@ def run_wandb():
     ) as run:
         cv_df = run_cv_experiment(x_train, y_train)
         log_results_to_wandb(cv_df, run)
-
-def run_wandb_sweep():
-    sweep_config = {
-        'method': 'random',  # Options: 'random', 'grid', 'bayes'
-        'metric': {
-            'name': 'val/r2',
-            'goal': 'maximize'
-        },
-        'parameters': {
-            'n_estimators': {
-                'distribution': 'int_uniform',
-                'min': 500,
-                'max': 2000
-            },
-            'learning_rate': {
-                'distribution': 'uniform',
-                'min': 0.01,
-                'max': 0.3
-            },
-            'max_depth': {
-                'distribution': 'int_uniform',
-                'min': 3,
-                'max': 6
-            },
-            'min_samples_split': {
-                'distribution': 'int_uniform',
-                'min': 2,
-                'max': 20
-            }
-            # Add more parameters as needed, e.g., 'subsample': {'min': 0.8, 'max': 1.0}
-        },
-        'project': 'AML_task1',
-        'tags': ['sweep', 'GradientBoostingRegressor']
-    }
-
-    # Create the sweep
-    sweep_id = wandb.sweep(sweep_config)
-
-    # Run the agent (adjust 'count' to the number of runs you want)
-    print("🚀 Starting WandB sweep agent...")
-    wandb.agent(sweep_id, function=sweep_train, count=50)  # Run 50 trials; adjust as needed
-
 
 
 def run_current_config():

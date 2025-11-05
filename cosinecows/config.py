@@ -5,7 +5,6 @@ from torchmetrics import R2Score
 class RunMode(Enum):
     final_evaluation = auto() # produce submission file for test data
     wandb = auto() # log to wandb
-    wandb_sweep = auto() # run a wandb sweep for hyperparameter optimization
     grid = auto()   # run all combinations of models and outlier detectors locally
     current_config = auto() # run single CV with current config
     optuna_search = auto()
