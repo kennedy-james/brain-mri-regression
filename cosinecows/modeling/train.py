@@ -51,8 +51,8 @@ def fit(X, y):
                 reg_alpha=0.5,
                 reg_lambda=3.0,
                 learning_rate=0.03,
-                eval_metric=configs['xgboost']['eval_metric'],
-                early_stopping_rounds=configs['xgboost']['early_stopping_rounds'],
+                eval_metric=configs['xgb_eval_metric'],
+                early_stopping_rounds=configs['xgb_early_stopping_rounds'],
                 verbosity=0
             )
     elif model_name is Regressor.extra_trees:
@@ -88,7 +88,7 @@ def fit(X, y):
                 reg_alpha=0.2,
                 reg_lambda=2.0,
                 learning_rate=0.02,
-                eval_metric=configs['xgboost']['eval_metric'],
+                eval_metric=configs['xgb_eval_metric'],
                 verbosity=0
             )),
             ('extra_trees', ExtraTreesRegressor(
@@ -171,7 +171,7 @@ def train_model(X, y, i=None):
     # === THIS IS THE FIX ===
     # The logic is now simple: if it's a tree model, skip selection.
     model_name = configs["regression_method"]
-    if not configs['selection']['is_enabled'] and model_name in [Regressor.xgb, Regressor.extra_trees, Regressor.random_forest_regressor]:
+    if not configs['selection_is_enabled'] and model_name in [Regressor.xgb, Regressor.extra_trees, Regressor.random_forest_regressor]:
         print("Using PassthroughSelector (skipping feature selection for tree-based model).")
         selection = PassthroughSelector()
         X_proc = selection.fit_transform(X_filt)
@@ -188,10 +188,10 @@ def train_model(X, y, i=None):
         # This will now correctly run for Ridge or Stacking
         print("Running feature_selection pipeline for non-tree model...")
         selection = feature_selection(X_filt, y_proc,
-                                      thresh_var=configs['selection']['thresh_var'],
-                                      thresh_corr=configs['selection']['thresh_corr'],
-                                      rf_max_feats=configs['selection']['rf_max_feats'],
-                                      percentile=configs['selection']['percentile']
+                                      thresh_var=configs['selection_thresh_var'],
+                                      thresh_corr=configs['selection_thresh_corr'],
+                                      rf_max_feats=configs['selection_rf_max_feats'],
+                                      percentile=configs['selection_percentile']
                                       )
         X_proc = selection.transform(X_filt)
         print(f"Selected features: {X_proc.shape[1]}")
@@ -214,7 +214,7 @@ def run_cv_experiment(x_data, y_data):
     cv_df: A DataFrame with detailed results for each fold.
     """
     model_name = configs["regression_method"]
-    outlier_method = configs["outlier_detector"]['method']
+    outlier_method = configs['outlier_method']
     cv_results_list = []
     print(f"\n--- 🚀 Running CV for: {model_name.name} + {outlier_method.name} ---")
     folds = KFold(n_splits=configs["folds"], shuffle=True, random_state=configs["random_state"])

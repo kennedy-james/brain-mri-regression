@@ -24,7 +24,7 @@ def run_final_evaluation():
     load_best_params(json_file=configs['optuna']['load_file'])
 
     print(f"   Final Model: {configs['regression_method'].name}")
-    print(f"   Final Outlier Detector: {configs['outlier_detector']['method'].name}")
+    print(f"   Final Outlier Detector: {configs['outlier_method'].name}")
     print(f"   Final Selection Percentile: {configs['selection'].get('percentile', 'N/A')}")
     # --- END NEW ---
 
@@ -63,12 +63,12 @@ def run_final_evaluation():
 
 def run_wandb():
     # Runs a single CV experiment (using 'configs') and logs to W&B.
-    print(f"🚀 Starting W&B run for: {configs['regression_method']} + {configs['outlier_detector']['method']}")
+    print(f"🚀 Starting W&B run for: {configs['regression_method']} + {configs['outlier_method']}")
     with wandb.init(
             project="AML_task1",
             config=configs,
-            tags=["regression", configs["regression_method"], configs["outlier_detector"]['method']],
-            name=f"regressor {configs['regression_method']}_{configs['outlier_detector']['method']}",
+            tags=["regression", configs["regression_method"], configs['outlier_method']],
+            name=f"regressor {configs['regression_method']}_{configs['outlier_method']}",
             notes=f''
     ) as run:
         cv_df = run_cv_experiment(x_train, y_train)
@@ -119,7 +119,7 @@ def run_wandb_sweep():
 
 def run_current_config():
     print(
-        f"🚀 Starting single local CV run for: {configs['regression_method'].name} + {configs['outlier_detector']['method'].name}")
+        f"🚀 Starting single local CV run for: {configs['regression_method'].name} + {configs['outlier_method'].name}")
     cv_df = run_cv_experiment(x_train, y_train)
     save_results_locally(cv_df, is_grouped_run=False)  # Use the helper
 
@@ -177,7 +177,7 @@ def run_optuna_search():
 def run_optuna_config():
     load_best_params(json_file=configs['optuna']['load_file'])
     print(
-        f"🚀 Starting single local CV run for: {configs['regression_method'].name} + {configs['outlier_detector']['method'].name}")
+        f"🚀 Starting single local CV run for: {configs['regression_method'].name} + {configs['outlier_method'].name}")
     cv_df = run_cv_experiment(x_train, y_train)
     save_results_locally(cv_df, is_grouped_run=False)
 

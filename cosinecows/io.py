@@ -29,23 +29,23 @@ def load_best_params(json_file="best_params.json"):
 
         if 'outlier_method_name' in best_params:
             outlier_method = OutlierDetector[best_params['outlier_method_name']]
-            configs['outlier_detector']['method'] = outlier_method
+            configs['outlier_method'] = outlier_method
             if outlier_method == OutlierDetector.isoforest and 'isoforest_contamination' in best_params:
-                configs['outlier_detector']['isoforest_contamination'] = best_params['isoforest_contamination']
+                configs['isoforest_contamination'] = best_params['isoforest_contamination']
             elif outlier_method == OutlierDetector.zscore and 'zscore_std' in best_params:
-                configs['outlier_detector']['zscore_std'] = best_params['zscore_std']
+                configs['zscore_std'] = best_params['zscore_std']
 
         # stacked ensemble params
         if 'selection_percentile' in best_params:
-            configs['selection']['percentile'] = best_params['selection_percentile']
+            configs['selection_percentile'] = best_params['selection_percentile']
             print(f"   Loaded selection_percentile: {best_params['selection_percentile']}")
 
         if 'pca_isoforest_contamination' in best_params:
-            configs['outlier_detector']['pca_isoforest_contamination'] = best_params['pca_isoforest_contamination']
+            configs['pca_isoforest_contamination'] = best_params['pca_isoforest_contamination']
             print(f"   Loaded pca_isoforest_contamination: {best_params['pca_isoforest_contamination']}")
 
         if 'pca_n_components' in best_params:
-            configs['outlier_detector']['pca_n_components'] = best_params['pca_n_components']
+            configs['pca_n_components'] = best_params['pca_n_components']
             print(f"   Loaded pca_n_components: {best_params['pca_n_components']}")
 
         # xgb specific params if present
@@ -120,7 +120,7 @@ def save_results_locally(results_df, is_grouped_run):
         plot_filename = "cv_run_boxplot_all.png"
     else:
         sns.boxplot(data=results_df[["train_score", "validation_score"]], ax=ax)
-        ax.set_title(f"CV Results: {configs['regression_method'].name} + {configs['outlier_detector']['method'].name} Detector + {'Feature Selection' if configs['selection']['is_enabled'] else 'No Feature Selection'} + {configs['impute_method'].name} Imputation")
+        ax.set_title(f"CV Results: {configs['regression_method'].name} + {configs['outlier_method'].name} Detector + {'Feature Selection' if configs['selection_is_enabled'] else 'No Feature Selection'} + {configs['impute_method'].name} Imputation")
         ax.set_xlabel("Score Type")
 
     ax.set_ylabel("R² Score")
