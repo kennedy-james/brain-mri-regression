@@ -76,7 +76,7 @@ def feature_selection(x_train, y_train, thresh_var=0.01, thresh_corr=0.95, rf_ma
         PrintShape(message="after CorrelationRemover"),  # Logs after this step
         SelectPercentile(score_func=mutual_info_regression, percentile=40),  # equivalent to KBest=200, more robust
         PrintShape(message="after SelectPercentile"),  # Logs after this step
-        rf_selector,  # non-linear embedded selection (RF instead of Lasso)
+        rf_selector  # non-linear embedded selection (RF instead of Lasso)
     )
     selection.fit(x_train, y_train)
     return selection
