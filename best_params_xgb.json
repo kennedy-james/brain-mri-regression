@@ -1,13 +1,15 @@
 {
-    "selection_percentile": 59,
-    "selection_rf_max_feats": 68,
-    "learning_rate": 0.04257472485535299,
-    "batch_size": 210,
+    "selection_percentile": 73,
+    "selection_rf_max_feats": 41,
+    "optimizer": "opt.Adamax",
+    "loss": "nn.MSELoss",
+    "learning_rate": 0.01214788064320746,
+    "batch_size": 35,
     "max_epochs": 14,
     "depth": 1,
-    "width_layer1": 44,
-    "dropout_layer1": 0.2844786902367659,
-    "activation_layer1": "nn.ReLU",
-    "dropout_layer2": 0.21381410933208195,
-    "activation_layer2": "nn.SiLU"
+    "width_layer1": 36,
+    "dropout_layer1": 0.06964138137676289,
+    "activation_layer1": "nn.LeakyReLU",
+    "dropout_layer2": 0.24215516087193295,
+    "activation_layer2": "nn.SELU"
 }
