@@ -1,7 +1,13 @@
 {
-    "selection_percentile": 32,
-    "selection_rf_max_feats": 44,
-    "length_scale": 6.124209435262154,
-    "alpha": 0.669737299146556,
-    "gp_alpha": 2.965074241784881e-09
+    "selection_percentile": 59,
+    "selection_rf_max_feats": 68,
+    "learning_rate": 0.04257472485535299,
+    "batch_size": 210,
+    "max_epochs": 14,
+    "depth": 1,
+    "width_layer1": 44,
+    "dropout_layer1": 0.2844786902367659,
+    "activation_layer1": "nn.ReLU",
+    "dropout_layer2": 0.21381410933208195,
+    "activation_layer2": "nn.SiLU"
 }

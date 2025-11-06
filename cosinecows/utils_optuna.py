@@ -69,15 +69,43 @@ def objective(trial, x, y):
         configs['regression_params']['length_scale'] = 6.124209435262154
         configs['regression_params']['alpha'] = 0.669737299146556
         configs['regression_params']['gp_alpha'] = 2.965074241784881e-09
+    if configs['regression_method'] == Regressor.neural_network:
+        configs['selection_percentile'] = trial.suggest_int('selection_percentile', 15, 75)
+        configs['selection_rf_max_feats'] = trial.suggest_int('selection_rf_max_feats', 25, 200)
 
-    if configs['regression_method'] == Regressor.catboost:
-        configs['regression_params'] = {
-            'random_state': configs["random_state"],
-            'iterations': trial.suggest_int('iterations', low=100, high=1000),
-            'learning_rate': trial.suggest_float('learning_rate', low=0.01, high=0.3, log=True),
-            'depth': trial.suggest_int('depth', low=4, high=10),
-            'l2_leaf_reg': trial.suggest_float('l2_leaf_reg', low=1.0, high=10.0),
-        }
+        configs['nn_optimizer'] = trial.suggest_categorical('optimizer', ['opt.Adamax', 'opt.RAdam'])
+        configs['nn_loss'] = trial.suggest_categorical('loss', ['nn.MSELoss', 'nn.HuberLoss', 'nn.SmoothL1Loss'])
+        configs['nn_parameters']['lr'] = trial.suggest_float('learning_rate', low=0.0001, high=10, log=True)
+        configs['nn_parameters']['batch_size'] = trial.suggest_int('batch_size', low=35, high=250)
+        configs['nn_parameters']['max_epochs'] = trial.suggest_int('max_epochs', low=3, high=15)
+        configs['nn_depth'] = trial.suggest_int('depth', low=1, high=4)
+
+        configs['nn_width'] = [configs['selection_rf_max_feats']]
+        configs['nn_dropout'] = []
+        configs['nn_activation'] = []
+        for layer in range(configs['nn_depth']):
+            configs['nn_width'].append(trial.suggest_int(f'width_layer{layer + 1}', low=2, high=configs['nn_width'][layer]))
+        configs['nn_width'].append(1)
+
+        for layer in range(configs['nn_depth'] + 1):
+            configs['nn_dropout'].append(trial.suggest_float(f'dropout_layer{layer + 1}', low=0, high=0.65))
+            configs['nn_activation'].append(trial.suggest_categorical(f'activation_layer{layer + 1}', [
+                'nn.ReLU', 'nn.SiLU', 'nn.Tanh', 'nn.Hardswish', 'nn.ELU', 'nn.PReLU', 'nn.SELU',
+                'nn.Hardtanh', 'nn.Hardshrink', 'nn.Tanhshrink', 'nn.Softsign', 'nn.Softshrink',
+                'nn.Mish', 'nn.Sigmoid', 'nn.GELU', 'nn.RReLU', 'nn.ReLU6', 'nn.LogSigmoid',
+                'nn.LeakyReLU']))
+
+
+        
+
+    # if configs['regression_method'] == Regressor.catboost:
+    #     configs['regression_params'] = {
+    #         'random_state': configs["random_state"],
+    #         'iterations': trial.suggest_int('iterations', low=100, high=1000),
+    #         'learning_rate': trial.suggest_float('learning_rate', low=0.01, high=0.3, log=True),
+    #         'depth': trial.suggest_int('depth', low=4, high=10),
+    #         'l2_leaf_reg': trial.suggest_float('l2_leaf_reg', low=1.0, high=10.0),
+    #     }
 
     # --- 4. Run the Experiment ---
     configs['folds'] = 4  # use fewer folds for faster tuning.

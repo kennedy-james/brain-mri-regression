@@ -101,19 +101,20 @@ selection_config = {
 
 # Add configuration for regression
 if configs['regression_method'] == Regressor.neural_network:
+    nn_definition = {}
+
     regression_config = {
-        'nn_architecture': nn.Sequential(
-            nn.Dropout(0.2),
-            nn.Linear(300, 150), nn.ReLU(),
-            nn.BatchNorm1d(150),
-            nn.Dropout(0.2),
-            nn.Linear(150, 150), nn.ReLU(),
-            nn.BatchNorm1d(150),
-            nn.Linear(150, 1), nn.ReLU()
-        ),
+        # Configuration to define architecture of NN
+        'nn_depth': 2,
+        'nn_dropout': [0.2, 0.2, 0.2],
+        'nn_width': [300, 150, 150, 1],
+        'nn_activation': [nn.ReLU, nn.ReLU, nn.ReLU],
+
+        # Configuration for NN training
+        'nn_optimizer': 'opt.Adamax', # Note: RAdam also good # Outside param dict otherwise optuna fails
+        'nn_loss': 'nn.MSELoss',
         'nn_parameters': {
             'batch_size': 128,
-            'optimizer': opt.Adamax, # Note: RAdam also good
             'train_split': None,
             'lr': 0.01,
             'max_epochs': 10

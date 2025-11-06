@@ -4,6 +4,8 @@ Train models.
 import pandas as pd
 import numpy as np
 import torch
+import torch.optim as opt
+import torch.nn as nn
 from sklearn.ensemble import ExtraTreesRegressor, RandomForestRegressor, StackingRegressor
 from sklearn.linear_model import Ridge
 from sklearn.metrics import r2_score
@@ -165,15 +167,29 @@ def fit(X, y):
             n_jobs=-1  # Use all cores
         )
     elif model_name is Regressor.neural_network:
-        nn = NeuralNetRegressor(
-            module=configs["nn_architecture"],
-            **configs["nn_parameters"]
+        # Construct NN
+        network_architecture = []
+
+        for i in range(configs['nn_depth'] + 1):
+            network_architecture.append(nn.Dropout(configs['nn_dropout'][i]))
+            network_architecture.append(nn.Linear(configs['nn_width'][i], configs['nn_width'][i + 1]))
+            network_architecture.append(eval(configs['nn_activation'][i])())
+            if i != configs['nn_depth']:
+                network_architecture.append(nn.BatchNorm1d(configs['nn_width'][i + 1]))
+        
+        # Define NN
+        neural_network = NeuralNetRegressor(
+            module=nn.Sequential(*network_architecture),
+            **configs["nn_parameters"],
+            criterion=eval(configs['nn_loss']),
+            optimizer=eval(configs['nn_optimizer']),
+            iterator_train__drop_last=True # Avoid crash when batch size 1
         )
 
         # Apply transformation to X
         pipe = Pipeline([
             ('scale_x', StandardScaler()),
-            ('neural_net', nn),
+            ('neural_net', neural_network),
         ])
 
         # Apply transformation for y
