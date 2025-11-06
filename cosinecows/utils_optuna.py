@@ -76,7 +76,7 @@ def objective(trial, x, y):
         configs['nn_optimizer'] = trial.suggest_categorical('optimizer', ['opt.Adamax', 'opt.RAdam'])
         configs['nn_loss'] = trial.suggest_categorical('loss', ['nn.MSELoss', 'nn.HuberLoss', 'nn.SmoothL1Loss'])
         configs['nn_parameters']['lr'] = trial.suggest_float('learning_rate', low=0.0001, high=10, log=True)
-        configs['nn_parameters']['batch_size'] = trial.suggest_int('batch_size', low=35, high=250)
+        configs['nn_parameters']['batch_size'] = trial.suggest_int('batch_size', low=35, high=275)
         configs['nn_parameters']['max_epochs'] = trial.suggest_int('max_epochs', low=3, high=15)
         configs['nn_depth'] = trial.suggest_int('depth', low=1, high=4)
 
