@@ -19,6 +19,7 @@ from sklearn.gaussian_process import GaussianProcessRegressor
 from sklearn.gaussian_process.kernels import RationalQuadratic
 from sklearn.pipeline import Pipeline
 from sklearn.compose import TransformedTargetRegressor
+from pytorch_tabnet.tab_model import TabNetRegressor
 
 
 from cosinecows.config import configs, Regressor
@@ -197,6 +198,12 @@ def fit(X, y):
             regressor=pipe,
             transformer=StandardScaler()
         )
+    elif model_name is Regressor.tab_net:
+        model = TabNetRegressor(
+            seed=configs['random_state'],
+            optimizer_fn=eval(configs['optimizer_fn']),
+            **configs['tab_parameters']
+            )
 
     if isinstance(model, XGBRegressor):
         x_train_sub, x_val_sub, y_train_sub, y_val_sub = train_test_split(
@@ -209,6 +216,9 @@ def fit(X, y):
         X = np.asarray(X, dtype=np.float32)
         y = np.asarray(y, dtype=np.float32).reshape(-1, 1)
         model.fit(X, y)
+    elif model_name is Regressor.tab_net:
+        y = y.reshape(-1, 1)
+        model.fit(X, y, **configs['tab_fitting'])
     else:
         model.fit(X, y)
 

@@ -94,6 +94,27 @@ def objective(trial, x, y):
                 'nn.Hardtanh', 'nn.Hardshrink', 'nn.Tanhshrink', 'nn.Softsign', 'nn.Softshrink',
                 'nn.Mish', 'nn.Sigmoid', 'nn.GELU', 'nn.RReLU', 'nn.ReLU6', 'nn.LogSigmoid',
                 'nn.LeakyReLU']))
+    if configs['regression_method'] == Regressor.tab_net:
+        configs['selection_percentile'] = trial.suggest_int('selection_percentile', 15, 75)
+        configs['selection_rf_max_feats'] = trial.suggest_int('selection_rf_max_feats', 25, 200)
+
+        configs['optimizer_fn'] = trial.suggest_categorical('optimizer_fn', [
+            'opt.Adadelta', 'opt.Adafactor', 'opt.Adagrad', 'opt.Adam', 'opt.AdamW', 'opt.Adamax', 'opt.ASGD',
+            'opt.NAdam', 'opt.RAdam', 'opt.RMSprop', 'opt.Rprop'])
+
+        configs['tab_parameters']['n_d'] = trial.suggest_int('n_d', low=8, high=64)
+        configs['tab_parameters']['n_a'] = configs['tab_parameters']['n_d']
+        # configs['n_a'] = trial.suggest_int('n_a', low=8, high=64)
+        configs['tab_parameters']['n_steps'] = trial.suggest_int('n_steps', low=3, high=10)
+        configs['tab_parameters']['gamma'] = trial.suggest_float('gamma', low=1.0, high=2.0)
+        configs['tab_parameters']['n_independent'] = trial.suggest_int('n_independent', low=1, high=5)
+        configs['tab_parameters']['n_shared'] = trial.suggest_int('n_shared', low=1, high=5)
+        configs['tab_parameters']['momentum'] = trial.suggest_float('momentum', low=0.01, high=0.4)
+
+        configs['tab_fitting']['max_epochs'] = trial.suggest_int('max_epochs', low=50, high=250)
+        configs['tab_fitting']['virtual_batch_size'] = trial.suggest_int('virtual_batch_size', low=64, high=256)
+        configs['tab_fitting']['patience'] = trial.suggest_int('patience', low=0, high=15)
+        configs['tab_fitting']['warm_start'] = trial.suggest_int('warm_start', low=0, high=1)
 
 
         

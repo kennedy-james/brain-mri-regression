@@ -38,6 +38,7 @@ class Regressor(Enum):
     stacking = auto()
     neural_network = auto()
     gaussian_process = auto()
+    tab_net = auto()
 
 
 RUNNING_MODE = RunMode.optuna_search
@@ -46,7 +47,7 @@ configs = {
     'random_state': 42,
     'impute_method': Imputer.knn,
     'outlier_method': OutlierDetector.pca_isoforest,
-    'regression_method': Regressor.neural_network,
+    'regression_method': Regressor.tab_net,
     'optuna': {
         'load_file': 'best_params_xgb.json',
         'objective_to_run': 'xgb', # stacker or xbg
@@ -133,14 +134,32 @@ elif configs['regression_method'] == Regressor.gradient_boosting:
         'gb_min_samples_split': 2
     }
 elif configs['regression_method'] == Regressor.gaussian_process:
-        regression_config = {
-            'length_scale': 6.124209435262154,
-            'alpha': 0.669737299146556,
-            'gp_alpha': 2.965074241784881e-09
+    regression_config = {
+        'length_scale': 6.124209435262154,
+        'alpha': 0.669737299146556,
+        'gp_alpha': 2.965074241784881e-09
+    }
+elif configs['regression_method'] == Regressor.tab_net:
+    regression_config = {
+        'optimizer_fn': 'opt.Adam', 
+        'tab_parameters': {
+            'n_d': 8,
+            'n_a': 8,
+            'n_steps': 3,
+            'gamma': 1.3,
+            'n_independent': 2,
+            'n_shared': 2,
+            'momentum': 0.02,
+        },
+        'tab_fitting': {
+            'max_epochs': 200,
+            'drop_last': False, # Otherwise breaks, batch_size > dataset
+            'virtual_batch_size': 128,
+            'patience': 10,
+            'warm_start': False
         }
+    }
 else:
-
-
     regression_config = {}
 
 # Generate final configs file from components
