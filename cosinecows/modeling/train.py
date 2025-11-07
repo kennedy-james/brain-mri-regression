@@ -6,7 +6,7 @@ import numpy as np
 import torch
 import torch.optim as opt
 import torch.nn as nn
-from sklearn.ensemble import ExtraTreesRegressor, RandomForestRegressor, StackingRegressor
+from sklearn.ensemble import ExtraTreesRegressor, RandomForestRegressor, StackingRegressor, BaggingRegressor
 from sklearn.linear_model import Ridge
 from sklearn.metrics import r2_score
 from sklearn.model_selection import train_test_split, KFold
@@ -97,6 +97,16 @@ def fit(X, y):
             **configs['xtrees_parameters'],
             n_jobs=-1  # Use all cores
         )
+    elif model_name is Regressor.svr:
+        model = make_pipeline(
+            StandardScaler(),
+            SVR(
+                kernel=configs['svr_kernel'],
+                C=configs['svr_C'],
+                epsilon=configs['svr_epsilon'],
+                gamma=configs['svr_gamma']
+            )
+        )
     elif model_name is Regressor.ridge:
         # Ridge is sensitive to feature scales, so we pipeline a scaler
         model = make_pipeline(
@@ -111,59 +121,82 @@ def fit(X, y):
         )
     elif model_name is Regressor.stacking:
         print("Defining stacked model...")
-        # base models: regularized XGB, simple Ridge, and fast SVR
         estimators = [
+            ('svr', SVR(
+                C=86, 
+                epsilon=0.11
+            )),
             ('xgb', XGBRegressor(
-                random_state=configs["random_state"],
-                n_estimators=600,
+                n_estimators=2410,
                 max_depth=5,
-                min_child_weight=6,
-                gamma=0.1,
-                subsample=0.8,
-                colsample_bytree=0.7,
-                reg_alpha=0.2,
-                reg_lambda=2.0,
-                learning_rate=0.02,
-                eval_metric=configs['xgb_eval_metric'],
-                verbosity=0
+                min_child_weight=13,
+                gamma=2.372524993310688,
+                subsample=0.7462741587810254,
+                colsample_bytree=0.6076272376281038,
+                reg_alpha=1.3240662642357892,
+                reg_lambda=2.586392652975843,
+                learning_rate=0.03332460602580017,
+                random_state=configs["random_state"]
             )),
-            ('extra_trees', ExtraTreesRegressor(
-                n_estimators=200,
-                max_depth=None,
-                min_samples_split=4,
+            ('bagging_svr', BaggingRegressor(
+                estimator=SVR(C=88, epsilon=0.09),
                 random_state=configs["random_state"],
-                n_jobs=-1
             )),
-            ('random_forest', RandomForestRegressor(
-                n_estimators=200,
-                max_depth=None,
-                min_samples_split=4,
-                random_state=configs["random_state"],
-                n_jobs=-1
-            )),
-            ('svr_linear', make_pipeline(
-                StandardScaler(),
-                SVR(kernel='linear', C=1.0)
-            ))
         ]
+        # base models: regularized XGB, simple Ridge, and fast SVR
+        # estimators = [
+        #     ('xgb', XGBRegressor(
+        #         random_state=configs["random_state"],
+        #         n_estimators=600,
+        #         max_depth=5,
+        #         min_child_weight=6,
+        #         gamma=0.1,
+        #         subsample=0.8,
+        #         colsample_bytree=0.7,
+        #         reg_alpha=0.2,
+        #         reg_lambda=2.0,
+        #         learning_rate=0.02,
+        #         eval_metric=configs['xgb_eval_metric'],
+        #         verbosity=0
+        #     )),
+        #     ('extra_trees', ExtraTreesRegressor(
+        #         n_estimators=200,
+        #         max_depth=None,
+        #         min_samples_split=4,
+        #         random_state=configs["random_state"],
+        #         n_jobs=-1
+        #     )),
+        #     ('random_forest', RandomForestRegressor(
+        #         n_estimators=200,
+        #         max_depth=None,
+        #         min_samples_split=4,
+        #         random_state=configs["random_state"],
+        #         n_jobs=-1
+        #     )),
+        #     ('svr_linear', make_pipeline(
+        #         StandardScaler(),
+        #         SVR(kernel='linear', C=1.0)
+        #     ))
+        # ]
 
         # meta-model combining predictions: simple robust Ridge model.
-        final_estimator = XGBRegressor(
-            random_state=configs["random_state"],
-            n_estimators=400,
-            max_depth=4,
-            learning_rate=0.05,
-            subsample=0.8,
-            colsample_bytree=0.7,
-            reg_lambda=1.0,
-            reg_alpha=0.2,
-            verbosity=0
-        )
+        # final_estimator = XGBRegressor(
+        #     random_state=configs["random_state"],
+        #     n_estimators=400,
+        #     max_depth=4,
+        #     learning_rate=0.05,
+        #     subsample=0.8,
+        #     colsample_bytree=0.7,
+        #     reg_lambda=1.0,
+        #     reg_alpha=0.2,
+        #     verbosity=0
+        # )
+
 
         # cv=5 means it will use 5-fold cross-validation internally to generate predictions, which prevents data leakage.
         model = StackingRegressor(
             estimators=estimators,
-            final_estimator=final_estimator,
+            # final_estimator=final_estimator,
             cv=5,  # Use 5 folds, 10 is too slow
             n_jobs=-1  # Use all cores
         )
@@ -266,7 +299,8 @@ def train_model(X, y, i=None):
                                       thresh_var=configs['selection_thresh_var'],
                                       thresh_corr=configs['selection_thresh_corr'],
                                       rf_max_feats=configs['selection_rf_max_feats'],
-                                      percentile=configs['selection_percentile']
+                                      percentile=configs['selection_percentile'],
+                                      k_best=configs['selection_k_best'],
                                       )
         X_proc = selection.transform(X_filt)
         print(f"Selected features: {X_proc.shape[1]}")

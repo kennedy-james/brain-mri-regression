@@ -119,7 +119,7 @@ def run_optuna_search():
     study.optimize(
         lambda trial: objective_func(trial, x_train, y_train),
         #n_trials= configs.get('n_trials', 50)
-        n_trials=700
+        n_trials=50
     )
 
     print("\n\n--- 🏆 Optuna Search Complete ---")

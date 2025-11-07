@@ -3,6 +3,9 @@ DB ?= optuna_study.db
 setup:
 	uv sync
 
+run:
+	uv run python main.py
+
 start-jupyterlab:
 	uv run jupyter lab
 
