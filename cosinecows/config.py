@@ -42,7 +42,7 @@ class Regressor(Enum):
     svr = auto()
 
 
-RUNNING_MODE = RunMode.final_evaluation
+RUNNING_MODE = RunMode.current_config
 configs = {
     'folds': 10,
     'random_state': 42,
@@ -130,8 +130,9 @@ match configs['regression_method']:
         }
     case Regressor.gaussian_process:
         regression_config = {
-            'length_scale': 6.124209435262154,
-            'alpha': 0.669737299146556,
+            # kernel rational quadratic
+            'gp_kernel_length_scale': 6.124209435262154,
+            'gp_kernel_alpha': 0.669737299146556,
             'gp_alpha': 2.965074241784881e-09
         }
     case Regressor.tab_net:

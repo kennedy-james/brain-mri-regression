@@ -20,8 +20,8 @@ x_train, y_train = load_train_data()
 def run_final_evaluation():
     # Generates submission.csv using the single configuration defined in the global 'configs' dict
     print(f"🚀 Running final evaluation pipeline with:")
-    print(f"Loading configuration from: {configs['optuna']['load_file']}...")
-    load_best_params(json_file=configs['optuna']['load_file'])
+    # print(f"Loading configuration from: {configs['optuna']['load_file']}...")
+    # load_best_params(json_file=configs['optuna']['load_file'])
 
     print(f"   Final Model: {configs['regression_method'].name}")
     print(f"   Final Outlier Detector: {configs['outlier_method'].name}")

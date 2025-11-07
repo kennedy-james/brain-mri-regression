@@ -138,6 +138,14 @@ def fit(X, y):
                 learning_rate=0.03332460602580017,
                 random_state=configs["random_state"]
             )),
+            ('gp', GaussianProcessRegressor(
+                random_state=configs["random_state"], 
+                alpha=2.965074241784881e-09, #configs['gp_alpha'],
+                kernel=RationalQuadratic(
+                    length_scale=6.124209435262154, #configs['gp_kernel_length_scale'],
+                    alpha=0.669737299146556, #configs['gp_kernel_alpha']
+                )
+            )),
             ('bagging_svr', BaggingRegressor(
                 estimator=SVR(C=88, epsilon=0.09),
                 random_state=configs["random_state"],
