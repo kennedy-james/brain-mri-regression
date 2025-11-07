@@ -4,6 +4,8 @@ Train models.
 import pandas as pd
 import numpy as np
 import torch
+import torch.optim as opt
+import torch.nn as nn
 from sklearn.ensemble import ExtraTreesRegressor, RandomForestRegressor, StackingRegressor
 from sklearn.linear_model import Ridge
 from sklearn.metrics import r2_score
@@ -17,6 +19,7 @@ from sklearn.gaussian_process import GaussianProcessRegressor
 from sklearn.gaussian_process.kernels import RationalQuadratic
 from sklearn.pipeline import Pipeline
 from sklearn.compose import TransformedTargetRegressor
+from pytorch_tabnet.tab_model import TabNetRegressor
 
 
 from cosinecows.config import configs, Regressor
@@ -91,7 +94,7 @@ def fit(X, y):
     elif model_name is Regressor.extra_trees:
         model = ExtraTreesRegressor(
             random_state=configs["random_state"],
-            n_estimators=100,  # You can tune this
+            **configs['xtrees_parameters'],
             n_jobs=-1  # Use all cores
         )
     elif model_name is Regressor.ridge:
@@ -165,15 +168,29 @@ def fit(X, y):
             n_jobs=-1  # Use all cores
         )
     elif model_name is Regressor.neural_network:
-        nn = NeuralNetRegressor(
-            module=configs["nn_architecture"],
-            **configs["nn_parameters"]
+        # Construct NN
+        network_architecture = []
+
+        for i in range(configs['nn_depth'] + 1):
+            network_architecture.append(nn.Dropout(configs['nn_dropout'][i]))
+            network_architecture.append(nn.Linear(configs['nn_width'][i], configs['nn_width'][i + 1]))
+            network_architecture.append(eval(configs['nn_activation'][i])())
+            if i != configs['nn_depth']:
+                network_architecture.append(nn.BatchNorm1d(configs['nn_width'][i + 1]))
+        
+        # Define NN
+        neural_network = NeuralNetRegressor(
+            module=nn.Sequential(*network_architecture),
+            **configs["nn_parameters"],
+            criterion=eval(configs['nn_loss']),
+            optimizer=eval(configs['nn_optimizer']),
+            iterator_train__drop_last=True # Avoid crash when batch size 1
         )
 
         # Apply transformation to X
         pipe = Pipeline([
             ('scale_x', StandardScaler()),
-            ('neural_net', nn),
+            ('neural_net', neural_network),
         ])
 
         # Apply transformation for y
@@ -181,6 +198,12 @@ def fit(X, y):
             regressor=pipe,
             transformer=StandardScaler()
         )
+    elif model_name is Regressor.tab_net:
+        model = TabNetRegressor(
+            seed=configs['random_state'],
+            optimizer_fn=eval(configs['optimizer_fn']),
+            **configs['tab_parameters']
+            )
 
     if isinstance(model, XGBRegressor):
         x_train_sub, x_val_sub, y_train_sub, y_val_sub = train_test_split(
@@ -193,6 +216,9 @@ def fit(X, y):
         X = np.asarray(X, dtype=np.float32)
         y = np.asarray(y, dtype=np.float32).reshape(-1, 1)
         model.fit(X, y)
+    elif model_name is Regressor.tab_net:
+        y = y.reshape(-1, 1)
+        model.fit(X, y, **configs['tab_fitting'])
     else:
         model.fit(X, y)
 

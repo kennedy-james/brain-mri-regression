@@ -1,6 +1,7 @@
 from enum import Enum, auto
 import torch.nn as nn
-
+from torchmetrics import R2Score
+import torch.optim as opt
 
 class RunMode(Enum):
     final_evaluation = auto() # produce submission file for test data
@@ -37,15 +38,16 @@ class Regressor(Enum):
     stacking = auto()
     neural_network = auto()
     gaussian_process = auto()
+    tab_net = auto()
 
 
-RUNNING_MODE = RunMode.current_config
+RUNNING_MODE = RunMode.optuna_search
 configs = {
     'folds': 10,
     'random_state': 42,
     'impute_method': Imputer.knn,
     'outlier_method': OutlierDetector.pca_isoforest,
-    'regression_method': Regressor.neural_network,
+    'regression_method': Regressor.extra_trees,
     'optuna': {
         'load_file': 'best_params_xgb.json',
         'objective_to_run': 'xgb', # stacker or xbg
@@ -98,20 +100,26 @@ selection_config = {
     'selection_percentile': 32
 }
 
+# Add configuration for regression
 match configs['regression_method']:
     case Regressor.neural_network:
+        nn_definition = {}
+
         regression_config = {
-            'nn_architecture': nn.Sequential(
-                nn.Linear(300, 150), nn.ReLU(),
-                nn.BatchNorm1d(150),
-                nn.Linear(150, 50), nn.ReLU(),
-                nn.BatchNorm1d(50),
-                nn.Linear(50, 1), nn.ReLU()
-            ),
+            # Configuration to define architecture of NN
+            'nn_depth': 2,
+            'nn_dropout': [0.2, 0.2, 0.2],
+            'nn_width': [300, 150, 150, 1],
+            'nn_activation': [nn.ReLU, nn.ReLU, nn.ReLU],
+
+            # Configuration for NN training
+            'nn_optimizer': 'opt.Adamax', # Note: RAdam also good # Outside param dict otherwise optuna fails
+            'nn_loss': 'nn.MSELoss',
             'nn_parameters': {
-                # 'criterion': R2Score,
-                # batch_size=100,
-                'train_split': None
+                'batch_size': 128,
+                'train_split': None,
+                'lr': 0.01,
+                'max_epochs': 10
             }
         }
     case Regressor.xgb | Regressor.stacking:
@@ -131,6 +139,38 @@ match configs['regression_method']:
             'length_scale': 6.124209435262154,
             'alpha': 0.669737299146556,
             'gp_alpha': 2.965074241784881e-09
+        }
+    case Regressor.tab_net:
+        regression_config = {
+            'optimizer_fn': 'opt.Adam', 
+            'tab_parameters': {
+                'n_d': 8,
+                'n_a': 8,
+                'n_steps': 3,
+                'gamma': 1.3,
+                'n_independent': 2,
+                'n_shared': 2,
+                'momentum': 0.02,
+            },
+            'tab_fitting': {
+                'max_epochs': 200,
+                'drop_last': False, # Otherwise breaks, batch_size > dataset
+                'virtual_batch_size': 128,
+                'patience': 10,
+                'warm_start': False
+            }
+        }
+    case Regressor.extra_trees:
+        regression_config = {
+            'xtrees_parameters': {
+                'n_estimators': 100,
+                'max_depth': None,
+                'min_samples_split': 2,
+                'min_samples_leaf': 1,
+                'bootstrap': False,
+                'max_features': 1.0,
+                'ccp_alpha': 0.0
+            }
         }
     case _:
         regression_config = {}

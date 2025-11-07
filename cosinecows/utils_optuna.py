@@ -69,15 +69,72 @@ def objective(trial, x, y):
         configs['regression_params']['length_scale'] = 6.124209435262154
         configs['regression_params']['alpha'] = 0.669737299146556
         configs['regression_params']['gp_alpha'] = 2.965074241784881e-09
+    if configs['regression_method'] == Regressor.neural_network:
+        configs['selection_percentile'] = trial.suggest_int('selection_percentile', 15, 75)
+        configs['selection_rf_max_feats'] = trial.suggest_int('selection_rf_max_feats', 25, 200)
 
-    if configs['regression_method'] == Regressor.catboost:
-        configs['regression_params'] = {
-            'random_state': configs["random_state"],
-            'iterations': trial.suggest_int('iterations', low=100, high=1000),
-            'learning_rate': trial.suggest_float('learning_rate', low=0.01, high=0.3, log=True),
-            'depth': trial.suggest_int('depth', low=4, high=10),
-            'l2_leaf_reg': trial.suggest_float('l2_leaf_reg', low=1.0, high=10.0),
-        }
+        configs['nn_optimizer'] = trial.suggest_categorical('optimizer', ['opt.Adamax', 'opt.RAdam'])
+        configs['nn_loss'] = trial.suggest_categorical('loss', ['nn.MSELoss', 'nn.HuberLoss', 'nn.SmoothL1Loss'])
+        configs['nn_parameters']['lr'] = trial.suggest_float('learning_rate', low=0.0001, high=10, log=True)
+        configs['nn_parameters']['batch_size'] = trial.suggest_int('batch_size', low=35, high=275)
+        configs['nn_parameters']['max_epochs'] = trial.suggest_int('max_epochs', low=3, high=15)
+        configs['nn_depth'] = trial.suggest_int('depth', low=1, high=4)
+
+        configs['nn_width'] = [configs['selection_rf_max_feats']]
+        configs['nn_dropout'] = []
+        configs['nn_activation'] = []
+        for layer in range(configs['nn_depth']):
+            configs['nn_width'].append(trial.suggest_int(f'width_layer{layer + 1}', low=2, high=configs['nn_width'][layer]))
+        configs['nn_width'].append(1)
+
+        for layer in range(configs['nn_depth'] + 1):
+            configs['nn_dropout'].append(trial.suggest_float(f'dropout_layer{layer + 1}', low=0, high=0.65))
+            configs['nn_activation'].append(trial.suggest_categorical(f'activation_layer{layer + 1}', [
+                'nn.ReLU', 'nn.SiLU', 'nn.Tanh', 'nn.Hardswish', 'nn.ELU', 'nn.PReLU', 'nn.SELU',
+                'nn.Hardtanh', 'nn.Hardshrink', 'nn.Tanhshrink', 'nn.Softsign', 'nn.Softshrink',
+                'nn.Mish', 'nn.Sigmoid', 'nn.GELU', 'nn.RReLU', 'nn.ReLU6', 'nn.LogSigmoid',
+                'nn.LeakyReLU']))
+    if configs['regression_method'] == Regressor.tab_net:
+        configs['selection_percentile'] = trial.suggest_int('selection_percentile', 15, 75)
+        configs['selection_rf_max_feats'] = trial.suggest_int('selection_rf_max_feats', 25, 200)
+
+        configs['optimizer_fn'] = trial.suggest_categorical('optimizer_fn', [
+            'opt.Adadelta', 'opt.Adafactor', 'opt.Adagrad', 'opt.Adam', 'opt.AdamW', 'opt.Adamax', 'opt.ASGD',
+            'opt.NAdam', 'opt.RAdam', 'opt.RMSprop', 'opt.Rprop'])
+
+        configs['tab_parameters']['n_d'] = trial.suggest_int('n_d', low=8, high=64)
+        configs['tab_parameters']['n_a'] = configs['tab_parameters']['n_d']
+        # configs['n_a'] = trial.suggest_int('n_a', low=8, high=64)
+        configs['tab_parameters']['n_steps'] = trial.suggest_int('n_steps', low=3, high=10)
+        configs['tab_parameters']['gamma'] = trial.suggest_float('gamma', low=1.0, high=2.0)
+        configs['tab_parameters']['n_independent'] = trial.suggest_int('n_independent', low=1, high=5)
+        configs['tab_parameters']['n_shared'] = trial.suggest_int('n_shared', low=1, high=5)
+        configs['tab_parameters']['momentum'] = trial.suggest_float('momentum', low=0.01, high=0.4)
+
+        configs['tab_fitting']['max_epochs'] = trial.suggest_int('max_epochs', low=50, high=250)
+        configs['tab_fitting']['virtual_batch_size'] = trial.suggest_int('virtual_batch_size', low=64, high=256)
+        configs['tab_fitting']['patience'] = trial.suggest_int('patience', low=0, high=15)
+        configs['tab_fitting']['warm_start'] = trial.suggest_int('warm_start', low=0, high=1)
+    if configs['regression_method'] == Regressor.extra_trees:
+        configs['xtrees_parameters']['n_estimators'] = trial.suggest_int('n_estimators', low=50, high=250)
+        configs['xtrees_parameters']['max_depth'] = trial.suggest_int('max_depth', low=5, high=40)
+        configs['xtrees_parameters']['min_samples_split'] = trial.suggest_int('min_samples_split', low=2, high=10)
+        configs['xtrees_parameters']['min_samples_leaf'] = trial.suggest_int('min_samples_leaf', low=1, high=10)
+        configs['xtrees_parameters']['bootstrap'] = trial.suggest_categorical('bootstrap', [True, False])
+        configs['xtrees_parameters']['max_features'] = trial.suggest_float('max_features', low=0.1, high=1.0)
+        configs['xtrees_parameters']['ccp_alpha'] = trial.suggest_float('ccp_alpha', low=0.0, high=0.5)
+
+
+        
+
+    # if configs['regression_method'] == Regressor.catboost:
+    #     configs['regression_params'] = {
+    #         'random_state': configs["random_state"],
+    #         'iterations': trial.suggest_int('iterations', low=100, high=1000),
+    #         'learning_rate': trial.suggest_float('learning_rate', low=0.01, high=0.3, log=True),
+    #         'depth': trial.suggest_int('depth', low=4, high=10),
+    #         'l2_leaf_reg': trial.suggest_float('l2_leaf_reg', low=1.0, high=10.0),
+    #     }
 
     # --- 4. Run the Experiment ---
     configs['folds'] = 4  # use fewer folds for faster tuning.

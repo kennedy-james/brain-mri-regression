@@ -1,7 +1,9 @@
 {
-    "selection_percentile": 32,
-    "selection_rf_max_feats": 44,
-    "length_scale": 6.124209435262154,
-    "alpha": 0.669737299146556,
-    "gp_alpha": 2.965074241784881e-09
+    "n_estimators": 246,
+    "max_depth": 31,
+    "min_samples_split": 4,
+    "min_samples_leaf": 1,
+    "bootstrap": false,
+    "max_features": 0.968486161592375,
+    "ccp_alpha": 0.037352249518307186
 }
