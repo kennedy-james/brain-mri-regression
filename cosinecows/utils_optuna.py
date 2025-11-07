@@ -115,6 +115,14 @@ def objective(trial, x, y):
         configs['tab_fitting']['virtual_batch_size'] = trial.suggest_int('virtual_batch_size', low=64, high=256)
         configs['tab_fitting']['patience'] = trial.suggest_int('patience', low=0, high=15)
         configs['tab_fitting']['warm_start'] = trial.suggest_int('warm_start', low=0, high=1)
+    if configs['regression_method'] == Regressor.extra_trees:
+        configs['xtrees_parameters']['n_estimators'] = trial.suggest_int('n_estimators', low=50, high=250)
+        configs['xtrees_parameters']['max_depth'] = trial.suggest_int('max_depth', low=5, high=40)
+        configs['xtrees_parameters']['min_samples_split'] = trial.suggest_int('min_samples_split', low=2, high=10)
+        configs['xtrees_parameters']['min_samples_leaf'] = trial.suggest_int('min_samples_leaf', low=1, high=10)
+        configs['xtrees_parameters']['bootstrap'] = trial.suggest_categorical('bootstrap', [True, False])
+        configs['xtrees_parameters']['max_features'] = trial.suggest_float('max_features', low=0.1, high=1.0)
+        configs['xtrees_parameters']['ccp_alpha'] = trial.suggest_float('ccp_alpha', low=0.0, high=0.5)
 
 
         

@@ -94,7 +94,7 @@ def fit(X, y):
     elif model_name is Regressor.extra_trees:
         model = ExtraTreesRegressor(
             random_state=configs["random_state"],
-            n_estimators=100,  # You can tune this
+            **configs['xtrees_parameters'],
             n_jobs=-1  # Use all cores
         )
     elif model_name is Regressor.ridge:

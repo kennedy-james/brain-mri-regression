@@ -47,7 +47,7 @@ configs = {
     'random_state': 42,
     'impute_method': Imputer.knn,
     'outlier_method': OutlierDetector.pca_isoforest,
-    'regression_method': Regressor.tab_net,
+    'regression_method': Regressor.extra_trees,
     'optuna': {
         'load_file': 'best_params_xgb.json',
         'objective_to_run': 'xgb', # stacker or xbg
@@ -157,6 +157,18 @@ elif configs['regression_method'] == Regressor.tab_net:
             'virtual_batch_size': 128,
             'patience': 10,
             'warm_start': False
+        }
+    }
+elif configs['regression_method'] == Regressor.extra_trees:
+    regression_config = {
+        'xtrees_parameters': {
+            'n_estimators': 100,
+            'max_depth': None,
+            'min_samples_split': 2,
+            'min_samples_leaf': 1,
+            'bootstrap': False,
+            'max_features': 1.0,
+            'ccp_alpha': 0.0
         }
     }
 else:

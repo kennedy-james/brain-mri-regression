@@ -1,0 +1,9 @@
+{
+    "n_estimators": 246,
+    "max_depth": 31,
+    "min_samples_split": 4,
+    "min_samples_leaf": 1,
+    "bootstrap": false,
+    "max_features": 0.968486161592375,
+    "ccp_alpha": 0.037352249518307186
+}
