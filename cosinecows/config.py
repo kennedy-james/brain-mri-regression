@@ -42,11 +42,11 @@ class Regressor(Enum):
     svr = auto()
 
 
-RUNNING_MODE = RunMode.optuna_search
+RUNNING_MODE = RunMode.final_evaluation
 configs = {
     'folds': 10,
     'random_state': 42,
-    'impute_method': Imputer.mean,
+    'impute_method': Imputer.knn,
     'outlier_method': OutlierDetector.pca_isoforest,
     'regression_method': Regressor.stacking,
     'optuna': {
@@ -182,7 +182,7 @@ selection_config = {
     'selection_thresh_corr': 0.90,
     'selection_rf_max_feats': 44,
     'selection_percentile': 32,
-    'selection_k_best': 200,
+    'selection_k_best': 194,
 }
 
 
