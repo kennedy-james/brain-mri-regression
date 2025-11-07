@@ -5,8 +5,14 @@ import numpy as np
 import pandas as pd
 from sklearn.base import BaseEstimator, TransformerMixin
 from sklearn.ensemble import RandomForestRegressor
-from sklearn.feature_selection import VarianceThreshold, SelectPercentile, mutual_info_regression, SelectFromModel
+from sklearn.feature_selection import VarianceThreshold, SelectPercentile, mutual_info_regression, SelectFromModel, \
+    SelectKBest
+from sklearn.linear_model import Lasso, LassoCV
 from sklearn.pipeline import make_pipeline
+from sklearn.preprocessing import RobustScaler
+from sklearn.preprocessing import StandardScaler
+
+from cosinecows.config import configs
 
 from cosinecows.config import configs
 
@@ -56,26 +62,26 @@ class PrintShape(BaseEstimator, TransformerMixin):
         return X  # Pass through unchanged
 
 
-def feature_selection(x_train, y_train, thresh_var=0.01, thresh_corr=0.95, rf_max_feats=120, rf_n_estimators=70, percentile=40):
+def feature_selection(x_train, y_train, thresh_var, thresh_corr, percentile):
     if hasattr(x_train, 'values'):
         x_train = x_train.values
         print("Converted to numpy array")
 
-    rf = RandomForestRegressor(n_estimators=rf_n_estimators, random_state=configs['random_state'], n_jobs=-1)
-    rf_selector = SelectFromModel(rf, max_features=rf_max_feats, threshold='0.1*mean')
-    univariate_selector = SelectPercentile(
-        score_func=mutual_info_regression,
-        percentile=percentile
-    )
+    # rf = RandomForestRegressor(n_estimators=rf_n_estimators, random_state=configs['random_state'], n_jobs=-1)
+    # rf_selector = SelectFromModel(rf, max_features=rf_max_feats, threshold='0.1*mean') params rf_max_feats, rf_n_estimators,
 
     selection = make_pipeline(
+        StandardScaler(),
         VarianceThreshold(threshold=thresh_var),  # low variance removal
         PrintShape(message="after VarianceThreshold"),  # Logs after this step
         CorrelationRemover(threshold=thresh_corr),  # high correlation removal
         PrintShape(message="after CorrelationRemover"),  # Logs after this step
-        SelectPercentile(score_func=mutual_info_regression, percentile=40),  # equivalent to KBest=200, more robust
-        PrintShape(message="after SelectPercentile"),  # Logs after this step
-        rf_selector  # non-linear embedded selection (RF instead of Lasso)
+        # SelectPercentile(score_func=mutual_info_regression, percentile=percentile),  # equivalent to KBest=200, more robust
+        SelectKBest(score_func=mutual_info_regression, k=200),  # k best
+        SelectFromModel(LassoCV(n_jobs=-1, random_state=configs['random_state'])),  # linear embedded selection (Lasso)
+        # PrintShape(message="after SelectPercentile"),  # Logs after this step
+        # rf_selector  # non-linear embedded selection (RF instead of Lasso)
+        # PrintShape(message="after random forest"),  # Logs after this step
     )
     selection.fit(x_train, y_train)
     return selection
