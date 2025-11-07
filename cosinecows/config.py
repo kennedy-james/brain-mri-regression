@@ -37,15 +37,17 @@ class Regressor(Enum):
     stacking = auto()
     neural_network = auto()
     gaussian_process = auto()
+    catboost = auto()
 
 
-RUNNING_MODE = RunMode.current_config
+RUNNING_MODE = RunMode.optuna_search
 configs = {
     'folds': 10,
     'random_state': 42,
     'impute_method': Imputer.knn,
     'outlier_method': OutlierDetector.pca_isoforest,
-    'regression_method': Regressor.neural_network,
+    'regression_method': Regressor.xgb,
+    'ensemble_search': False,
     'optuna': {
         'load_file': 'best_params_xgb.json',
         'objective_to_run': 'xgb', # stacker or xbg
@@ -117,7 +119,7 @@ if configs['regression_method'] == Regressor.neural_network:
 elif configs['regression_method'] in [Regressor.xgb, Regressor.stacking]:
     regression_config = {
             'xgb_eval_metric': 'rmse',
-            'xgb_early_stopping_rounds': 20
+            'xgb_early_stopping_rounds': 100
     }
 elif configs['regression_method'] == Regressor.gradient_boosting:
     regression_config = {

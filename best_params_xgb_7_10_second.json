@@ -1,0 +1,13 @@
+{
+    "selection_percentile": 31,
+    "selection_rf_max_feats": 48,
+    "knn_neighbours": 7,
+    "max_depth": 8,
+    "min_child_weight": 20,
+    "gamma": 1.9467682096781787,
+    "subsample": 0.5711905188540151,
+    "colsample_bytree": 0.4125261938149998,
+    "reg_alpha": 1.8712256660274105,
+    "reg_lambda": 3.756621583117957,
+    "learning_rate": 0.0037558272141461355
+}

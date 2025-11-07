@@ -1,0 +1,9 @@
+{
+    "selection_percentile": 46,
+    "selection_rf_max_feats": 35,
+    "length_scale": 6.681911747437588,
+    "alpha": 0.7551394529168147,
+    "noise_level": 0.10152025654873041,
+    "gp_alpha": 3.5870363107765335e-09,
+    "n_restarts_optimizer": 5
+}

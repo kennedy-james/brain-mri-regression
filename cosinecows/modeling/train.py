@@ -14,7 +14,7 @@ from sklearn.svm import SVR
 from xgboost import XGBRegressor
 from skorch import NeuralNetRegressor
 from sklearn.gaussian_process import GaussianProcessRegressor
-from sklearn.gaussian_process.kernels import RationalQuadratic
+from sklearn.gaussian_process.kernels import RationalQuadratic, WhiteKernel
 from sklearn.pipeline import Pipeline
 from sklearn.compose import TransformedTargetRegressor
 
@@ -37,48 +37,45 @@ def fit(X, y):
     ----------
     model: Final model for prediction
     """
+
     model_name = configs["regression_method"]
     print(f"Fitting model: {model_name}")
+
+    model = None
 
     if model_name is Regressor.xgb:
         # check if optuna provided set of tuned params
         if 'regression_params' in configs:
             print("Using tuned XGBoost parameters from Optuna...")
             model = XGBRegressor(**configs['regression_params'])
-        else:
-            model = XGBRegressor(
-                random_state=configs["random_state"],
-                n_estimators=300,
-                max_depth=5,  # shallower trees
-                min_child_weight=15,  # require more samples per leaf
-                gamma=1.0,  # stronger split penalty
-                subsample=0.75,
-                colsample_bytree=0.4,  # fewer features per tree
-                reg_alpha=0.5,
-                reg_lambda=3.0,
-                learning_rate=0.03,
-                eval_metric=configs['xgb_eval_metric'],
-                early_stopping_rounds=configs['xgb_early_stopping_rounds'],
-                verbosity=0
-            )
+
+            print('this should not happen')
     elif model_name is Regressor.gaussian_process:
 
         if 'regression_params' in configs:
             print("Using tuned GPR parameters from Optuna...")
-            kernel = RationalQuadratic(length_scale=configs['regression_config']['length_scale'],
-                                       alpha=configs['regression_config']['alpha'])
-            model = GaussianProcessRegressor(random_state=configs["random_state"], alpha=configs['regression_config']['gp_alpha'],
-                                           #n_restarts_optimizer=5, 
+            kernel = RationalQuadratic(length_scale=configs['regression_params']['length_scale'],
+                                       alpha=configs['regression_params']['alpha'])
+            kernel_noise = WhiteKernel(noise_level=configs['regression_params']['noise_level'])
+            kernel += kernel_noise
+            model = GaussianProcessRegressor(random_state=configs["random_state"], alpha=configs['regression_params']['gp_alpha'],
+                                           #n_restarts_optimizer=configs['regression_params']['n_restarts_optimizer'],
                                            kernel=kernel)
 
         else:
-            print("Using default GPR parameters...")
-            model = GaussianProcessRegressor(
-                random_state=configs["random_state"],
-                kernel=RationalQuadratic(length_scale=1.0, alpha=1.0)
-            )
+            raise ValueError("Missing regression_params")
+        
+        feature_sel_pipe = make_feature_selection_pipeline(
+            thresh_var=0.01,
+            thresh_corr=0.95,
+            rf_max_feats=120,
+            rf_n_estimators=70,
+            percentile=40,
+            random_state=configs["random_state"]
+        ) 
         
         pipe = Pipeline([
+            ('feature_selection', feature_sel_pipe)
             ('scale_x', StandardScaler()),
             ('gpr', model)
         ])
@@ -145,25 +142,25 @@ def fit(X, y):
         ]
 
         # meta-model combining predictions: simple robust Ridge model.
-        final_estimator = XGBRegressor(
-            random_state=configs["random_state"],
-            n_estimators=400,
-            max_depth=4,
-            learning_rate=0.05,
-            subsample=0.8,
-            colsample_bytree=0.7,
-            reg_lambda=1.0,
-            reg_alpha=0.2,
-            verbosity=0
-        )
-
-        # cv=5 means it will use 5-fold cross-validation internally to generate predictions, which prevents data leakage.
-        model = StackingRegressor(
-            estimators=estimators,
-            final_estimator=final_estimator,
-            cv=5,  # Use 5 folds, 10 is too slow
-            n_jobs=-1  # Use all cores
-        )
+        #final_estimator = XGBRegressor(
+        #    random_state=configs["random_state"],
+        #    n_estimators=400,
+        #    max_depth=4,
+        #    learning_rate=0.05,
+        #    subsample=0.8,
+        #    colsample_bytree=0.7,
+        #    reg_lambda=1.0,
+        #    reg_alpha=0.2,
+        #    verbosity=0
+        #)
+#
+        ## cv=5 means it will use 5-fold cross-validation internally to generate predictions, which prevents data leakage.
+        #model = StackingRegressor(
+        #    estimators=estimators,
+        #    final_estimator=final_estimator,
+        #    cv=5,  # Use 5 folds, 10 is too slow
+        #    n_jobs=-1  # Use all cores
+        #)
     elif model_name is Regressor.neural_network:
         nn = NeuralNetRegressor(
             module=configs["nn_architecture"],
@@ -194,10 +191,11 @@ def fit(X, y):
         y = np.asarray(y, dtype=np.float32).reshape(-1, 1)
         model.fit(X, y)
     else:
+
         model.fit(X, y)
 
-    if 'regression_params' in configs:
-        del configs['regression_params']  # clean up tuned params to not break next run
+#    if 'regression_params' in configs:
+#        del configs['regression_params']  # clean up tuned params to not break next run
 
     return model
 
@@ -227,11 +225,11 @@ def train_model(X, y, i=None):
         print(f"Selected features: {X_proc.shape[1]} (all)")
 
     # avoid feature selection for tree-based models
-    elif model_name in [Regressor.xgb, Regressor.extra_trees, Regressor.random_forest_regressor]:
-        print(f"Skipping feature selection for {model_name.name} (tree-based or stacking). Using PassthroughSelector.")
-        selection = PassthroughSelector()
-        X_proc = selection.fit_transform(X_filt)
-        print(f"Selected features: {X_proc.shape[1]} (all)")
+    #elif model_name in [Regressor.xgb, Regressor.extra_trees, Regressor.random_forest_regressor]:
+    #    print(f"Skipping feature selection for {model_name.name} (tree-based or stacking). Using PassthroughSelector.")
+    #    selection = PassthroughSelector()
+    #    X_proc = selection.fit_transform(X_filt)
+    #    print(f"Selected features: {X_proc.shape[1]} (all)")
 
     else:
         # This will now correctly run for Ridge or Stacking

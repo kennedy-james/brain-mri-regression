@@ -114,12 +114,16 @@ def run_optuna_search():
 
 
 
-    study = optuna.create_study(storage=storage_name, study_name=study_name, direction='maximize', load_if_exists=True)
+    study = optuna.create_study(storage=storage_name,
+                                study_name=study_name,
+                                direction='maximize',
+                                #sampler=optuna.samplers.RandomSampler(seed=configs["random_state"]),
+                                load_if_exists=True)
     # run 50 different trials. may take long
     study.optimize(
         lambda trial: objective_func(trial, x_train, y_train),
         #n_trials= configs.get('n_trials', 50)
-        n_trials=50
+        n_trials=1000
     )
 
     print("\n\n--- 🏆 Optuna Search Complete ---")
