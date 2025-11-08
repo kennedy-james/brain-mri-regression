@@ -59,7 +59,7 @@ configs = {
 match configs['impute_method']:
     case Imputer.knn:
         imputation_config = {
-            'knn_neighbours': 75,
+            'knn_neighbours': 40,
             'knn_weight': 'uniform',  # possible neighbour weights for average (uniform, distance)
         }
     case Imputer.iterative:
@@ -119,7 +119,7 @@ match configs['regression_method']:
     case Regressor.xgb | Regressor.stacking:
         regression_config = {
             'xgb_eval_metric': 'rmse',
-            'xgb_early_stopping_rounds': 20
+            'xgb_early_stopping_rounds': 400
         }
     case Regressor.gradient_boosting:
         regression_config = {

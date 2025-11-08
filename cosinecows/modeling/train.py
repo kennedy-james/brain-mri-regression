@@ -20,6 +20,7 @@ from sklearn.gaussian_process.kernels import RationalQuadratic
 from sklearn.pipeline import Pipeline
 from sklearn.compose import TransformedTargetRegressor
 from pytorch_tabnet.tab_model import TabNetRegressor
+from skorch.dataset import Dataset
 
 
 from cosinecows.config import configs, Regressor
@@ -27,6 +28,55 @@ from cosinecows.feature_selection import PassthroughSelector, feature_selection
 from cosinecows.imputation import imputation
 from cosinecows.outlier_detection import outlier_detection
 
+class Float32Dataset(Dataset):
+    def __init__(self, X, y=None):
+        X = np.asarray(X, dtype=np.float32)
+        if y is not None:
+            y = np.asarray(y, dtype=np.float32).reshape(-1, 1)
+        super().__init__(X, y)
+
+def build_nn(X):
+    input_dim = X.shape[1]
+    nn_depth      = 1
+    nn_dropout    = [0.06964138137676289, 0.24215516087193295]
+    nn_width      = [input_dim, 36, 1]
+    nn_activation = ["nn.LeakyReLU", "nn.SELU"]
+    nn_optimizer  = 'opt.Adamax'
+    nn_loss       = 'nn.MSELoss'
+    nn_parameters = {
+        'batch_size': 35,
+        'train_split': None,
+        'lr': 0.01214788064320746,
+        'max_epochs': 14
+    }
+    network_architecture = []
+    for i in range(nn_depth + 1):
+        network_architecture.append(nn.Dropout(nn_dropout[i]))
+        network_architecture.append(nn.Linear(nn_width[i], nn_width[i + 1]))
+        network_architecture.append(eval(nn_activation[i])())
+        if i != nn_depth:                     # BatchNorm only between layers
+            network_architecture.append(nn.BatchNorm1d(nn_width[i + 1]))
+
+
+
+    neural_network = NeuralNetRegressor(
+        module=nn.Sequential(*network_architecture),
+        **nn_parameters,
+        criterion=eval(nn_loss),
+        optimizer=eval(nn_optimizer),
+        iterator_train__drop_last=True,
+        dataset=Float32Dataset
+    )
+
+    nn_pipe = Pipeline([
+        ('scale_x', StandardScaler()),
+        ('neural_net', neural_network),
+    ])
+    nn_model = TransformedTargetRegressor(
+        regressor=nn_pipe,
+        transformer=StandardScaler()
+    )
+    return nn_model
 
 def fit(X, y):
     """Training of the model
@@ -121,6 +171,8 @@ def fit(X, y):
         )
     elif model_name is Regressor.stacking:
         print("Defining stacked model...")
+
+
         estimators = [
             ('svr', SVR(
                 C=86, 
@@ -138,6 +190,19 @@ def fit(X, y):
                 learning_rate=0.03332460602580017,
                 random_state=configs["random_state"]
             )),
+
+            #('xgb', XGBRegressor(
+            #    n_estimators=10000,
+            #    max_depth=9,
+            #    min_child_weight=14,
+            #    gamma=1.4692138346993904,
+            #    subsample=0.5242435898389789,
+            #    colsample_bytree=0.7983736226513591,
+            #    reg_alpha=1.0788677992397164,
+            #    reg_lambda=2.1877404829230365,
+            #    learning_rate=0.0018296906700668437,
+            #    random_state=configs["random_state"]
+            #)),
             ('gp', GaussianProcessRegressor(
                 random_state=configs["random_state"], 
                 alpha=2.965074241784881e-09, #configs['gp_alpha'],
@@ -150,6 +215,7 @@ def fit(X, y):
                 estimator=SVR(C=88, epsilon=0.09),
                 random_state=configs["random_state"],
             )),
+            ('nn', build_nn(X)),
         ]
         # base models: regularized XGB, simple Ridge, and fast SVR
         # estimators = [
