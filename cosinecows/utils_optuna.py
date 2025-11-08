@@ -123,18 +123,14 @@ def objective(trial, x, y):
         configs['xtrees_parameters']['bootstrap'] = trial.suggest_categorical('bootstrap', [True, False])
         configs['xtrees_parameters']['max_features'] = trial.suggest_float('max_features', low=0.1, high=1.0)
         configs['xtrees_parameters']['ccp_alpha'] = trial.suggest_float('ccp_alpha', low=0.0, high=0.5)
-
-
-        
-
-    # if configs['regression_method'] == Regressor.catboost:
-    #     configs['regression_params'] = {
-    #         'random_state': configs["random_state"],
-    #         'iterations': trial.suggest_int('iterations', low=100, high=1000),
-    #         'learning_rate': trial.suggest_float('learning_rate', low=0.01, high=0.3, log=True),
-    #         'depth': trial.suggest_int('depth', low=4, high=10),
-    #         'l2_leaf_reg': trial.suggest_float('l2_leaf_reg', low=1.0, high=10.0),
-    #     }
+    if configs['regression_method'] == Regressor.catboost:
+        configs['catboost_parameters']['iterations'] = trial.suggest_int('iterations', low=750, high=6000)
+        configs['catboost_parameters']['learning_rate'] = trial.suggest_float('learning_rate', low=0.0000001, high=0.5, log=True)
+        configs['catboost_parameters']['depth'] = trial.suggest_int('depth', low=4, high=12)
+        configs['catboost_parameters']['l2_leaf_reg'] = trial.suggest_float('l2_leaf_reg', low=0.25, high=5.0)
+        configs['catboost_parameters']['early_stopping_rounds'] = trial.suggest_int('early_stopping_rounds', low=40, high=1000)
+        configs['catboost_parameters']['random_strength'] = trial.suggest_float('random_strength', low=0.1, high=3.0)
+        configs['catboost_parameters']['bagging_temperature'] = trial.suggest_float('bagging_temperature', low=0.2, high=4.0)
 
     # --- 4. Run the Experiment ---
     configs['folds'] = 4  # use fewer folds for faster tuning.

@@ -20,6 +20,7 @@ from sklearn.gaussian_process.kernels import RationalQuadratic
 from sklearn.pipeline import Pipeline
 from sklearn.compose import TransformedTargetRegressor
 from pytorch_tabnet.tab_model import TabNetRegressor
+from catboost import CatBoostRegressor, Pool
 
 
 from cosinecows.config import configs, Regressor
@@ -108,6 +109,11 @@ def fit(X, y):
             random_state=configs["random_state"],
             n_estimators=100,  # Using same default as ExtraTrees
             n_jobs=-1
+        )
+    elif model_name is Regressor.catboost:
+        model = CatBoostRegressor(
+            random_seed=configs["random_state"],
+            **configs['catboost_parameters']
         )
     elif model_name is Regressor.stacking:
         print("Defining stacked model...")

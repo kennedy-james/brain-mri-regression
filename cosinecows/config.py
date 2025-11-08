@@ -32,6 +32,7 @@ class OutlierDetector(Enum):
 class Regressor(Enum):
     xgb = auto()
     extra_trees = auto()
+    catboost = auto()
     ridge = auto()
     random_forest_regressor = auto()
     gradient_boosting = auto() # TODO: Graident boosting doesn't actually seem to be implemented?
@@ -41,13 +42,13 @@ class Regressor(Enum):
     tab_net = auto()
 
 
-RUNNING_MODE = RunMode.optuna_search
+RUNNING_MODE = RunMode.current_config
 configs = {
     'folds': 10,
     'random_state': 42,
     'impute_method': Imputer.knn,
     'outlier_method': OutlierDetector.pca_isoforest,
-    'regression_method': Regressor.extra_trees,
+    'regression_method': Regressor.catboost,
     'optuna': {
         'load_file': 'best_params_xgb.json',
         'objective_to_run': 'xgb', # stacker or xbg
@@ -170,6 +171,18 @@ match configs['regression_method']:
                 'bootstrap': False,
                 'max_features': 1.0,
                 'ccp_alpha': 0.0
+            }
+        }
+    case Regressor.catboost:
+        regression_config = {
+            'catboost_parameters': {
+                'iterations': 3626, # Should be much greater than 100
+                'learning_rate': 0.008013493547220914, # Should be less than 0.7
+                'depth': 7, # sometimes good to use 10
+                'l2_leaf_reg': 0.2530799357736654,
+                'early_stopping_rounds': 158, # at least 50 for several thousand iterations
+                'random_strength': 2.8241003601634453,
+                'bagging_temperature': 1.4774574019375732
             }
         }
     case _:
