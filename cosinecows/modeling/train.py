@@ -21,6 +21,7 @@ from sklearn.pipeline import Pipeline
 from sklearn.compose import TransformedTargetRegressor
 from pytorch_tabnet.tab_model import TabNetRegressor
 from skorch.dataset import Dataset
+from catboost import CatBoostRegressor, Pool
 
 
 from cosinecows.config import configs, Regressor
@@ -190,7 +191,6 @@ def fit(X, y):
                 learning_rate=0.03332460602580017,
                 random_state=configs["random_state"]
             )),
-
             #('xgb', XGBRegressor(
             #    n_estimators=10000,
             #    max_depth=9,
@@ -203,6 +203,7 @@ def fit(X, y):
             #    learning_rate=0.0018296906700668437,
             #    random_state=configs["random_state"]
             #)),
+
             ('gp', GaussianProcessRegressor(
                 random_state=configs["random_state"], 
                 alpha=2.965074241784881e-09, #configs['gp_alpha'],
@@ -216,6 +217,29 @@ def fit(X, y):
                 random_state=configs["random_state"],
             )),
             ('nn', build_nn(X)),
+
+            ('catboost', CatBoostRegressor(
+                iterations=3626,
+                learning_rate=0.008013493547220914,
+                depth=7,
+                l2_leaf_reg=0.2530799357736654,
+                early_stopping_rounds=158,
+                random_strength=2.8241003601634453,
+                bagging_temperature=1.4774574019375732,
+                random_state=configs["random_state"],
+                verbose=0
+            )),
+            #regression_config = {
+            #'catboost_parameters': {
+            #    'iterations': 3626, # Should be much greater than 100
+            #    'learning_rate': 0.008013493547220914, # Should be less than 0.7
+            #    'depth': 7, # sometimes good to use 10
+            #    'l2_leaf_reg': 0.2530799357736654,
+            #    'early_stopping_rounds': 158, # at least 50 for several thousand iterations
+            #    'random_strength': 2.8241003601634453,
+            #    'bagging_temperature': 1.4774574019375732
+            #}
+
         ]
         # base models: regularized XGB, simple Ridge, and fast SVR
         # estimators = [
