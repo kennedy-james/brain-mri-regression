@@ -39,8 +39,8 @@ def objective(trial, x, y):
     # Tune XGBoost parameters for a HIGH-DIMENSIONAL (832 features) dataset
     if configs['regression_method'] == Regressor.xgb:
         configs['regression_params'] = { 
-            'k_best': trial.suggest_int('k_best', 30, 400),
-            'score_func': trial.suggest_categorical('score_func', ['f_regression', 'mutual_info_regression']),
+            'k_best': trial.suggest_int('k_best', 30, 600),
+            'score_func': trial.suggest_categorical('score_func', ['f_regression', 'lasso_regression', 'random_forest_regressor']),
 
 
             'random_state': configs["random_state"],
@@ -63,7 +63,7 @@ def objective(trial, x, y):
         
         configs['regression_params'] = {
             'k_best': trial.suggest_int('k_best', 30, 400),
-            'score_func': trial.suggest_categorical('score_func', ['f_regression', 'mutual_info_regression']),
+            'score_func': trial.suggest_categorical('score_func', ['f_regression', 'lasso_regression', 'random_forest_regressor']),
 
             'random_state': configs["random_state"],
             'length_scale': trial.suggest_float('length_scale', low=4, high=7),
@@ -149,7 +149,9 @@ def objective(trial, x, y):
         model_method = configs['regression_method']
         if model_method in [Regressor.xgb, Regressor.gaussian_process]:
                     if 'regression_params' in configs:
-                        del configs['regression_params']        
+                        del configs['regression_params']
+
+         
 
     return mean_val_score
 

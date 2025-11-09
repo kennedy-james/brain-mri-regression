@@ -83,26 +83,45 @@ class PrintShape(BaseEstimator, TransformerMixin):
 #    selection.fit(x_train, y_train)
 #    return selection
 
+from sklearn.feature_selection import f_regression, mutual_info_regression, SelectKBest, VarianceThreshold
+from sklearn.pipeline import make_pipeline
+from sklearn.preprocessing import RobustScaler
+from sklearn.ensemble import RandomForestRegressor
+from sklearn.linear_model import Lasso
+import numpy as np
+
 def feature_selection(thresh_var=0.01, score_func='f_regression', k_best=200):
-    #rf = RandomForestRegressor(n_estimators=rf_n_estimators, random_state=configs['random_state'], n_jobs=-1)
-    #rf_selector = SelectFromModel(rf, max_features=rf_max_feats, threshold='0.1*mean')
+    def rf(X, y):
+        model = RandomForestRegressor(n_estimators=100, random_state=42)
+        model.fit(X, y)
+        return model.feature_importances_, None
+
+    def lasso(X, y):
+        model = Lasso(alpha=0.1)
+        model.fit(X, y)
+        return np.abs(model.coef_), None
+
     if score_func == 'f_regression':
         score_func = f_regression
     elif score_func == 'mutual_info_regression':
         score_func = mutual_info_regression
-    
+    elif score_func == 'random_forest_regressor':
+        score_func = rf
+    elif score_func == 'lasso_regression':
+        score_func = lasso
+
     selection = make_pipeline(
         PrintShape(message="before VarianceThreshold"),
         RobustScaler(),
-        VarianceThreshold(threshold=thresh_var),  # low variance removal
-        PrintShape(message="after VarianceThreshold"),  # Logs after this step
+        VarianceThreshold(threshold=thresh_var), # low variance removal
+        PrintShape(message="after VarianceThreshold"), # Logs after this step
         SelectKBest(score_func=score_func, k=k_best),
         PrintShape(message="after SelectKBest"),
-        #CorrelationRemover(threshold=thresh_corr),  # high correlation removal
-        #PrintShape(message="after CorrelationRemover"),  # Logs after this step
-        #SelectPercentile(score_func=mutual_info_regression, percentile=percentile),  # Use the passed percentile
-        #PrintShape(message="after SelectPercentile"),  # Logs after this step
-        #rf_selector,  # non-linear embedded selection (RF instead of Lasso)
-        #PrintShape(message="after RandomForestSelector")  # Logs after this step
+        #CorrelationRemover(threshold=thresh_corr), # high correlation removal
+        #PrintShape(message="after CorrelationRemover"), # Logs after this step
+        #SelectPercentile(score_func=mutual_info_regression, percentile=percentile), # Use the passed percentile
+        #PrintShape(message="after SelectPercentile"), # Logs after this step
+        #rf_selector, # non-linear embedded selection (RF instead of Lasso)
+        #PrintShape(message="after RandomForestSelector") # Logs after this step
     )
     return selection

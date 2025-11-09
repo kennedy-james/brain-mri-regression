@@ -59,7 +59,7 @@ configs = {
 match configs['impute_method']:
     case Imputer.knn:
         imputation_config = {
-            'knn_neighbours': 75,
+            'knn_neighbours': 40,
             'knn_weight': 'uniform',  # possible neighbour weights for average (uniform, distance)
         }
     case Imputer.iterative:
