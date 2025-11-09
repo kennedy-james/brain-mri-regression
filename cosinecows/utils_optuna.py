@@ -45,7 +45,7 @@ def objective(trial, x, y):
 
             'random_state': configs["random_state"],
             #'n_estimators': trial.suggest_int('n_estimators', low=400, high=2500),
-            'n_estimators': trial.suggest_int('n_estimators', low=800, high=5000),
+            'n_estimators': trial.suggest_int('n_estimators', low=300, high=5000),
             'max_depth': trial.suggest_int('max_depth', low=6, high=15),
             'min_child_weight': trial.suggest_int('min_child_weight', low=10, high=25),
             'gamma': trial.suggest_float('gamma', low=1.0, high=2.5),
