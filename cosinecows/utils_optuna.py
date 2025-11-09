@@ -74,17 +74,19 @@ def objective(trial, x, y):
 
         }
     if configs['regression_method'] == Regressor.neural_network:
-        configs['selection_percentile'] = trial.suggest_int('selection_percentile', 15, 75)
-        configs['selection_rf_max_feats'] = trial.suggest_int('selection_rf_max_feats', 25, 200)
+        configs['regression_params'] = {
+            'k_best': trial.suggest_int('k_best', 30, 600),
+            'score_func': trial.suggest_categorical('score_func', ['f_regression', 'lasso_regression', 'random_forest_regressor']),
+        }
 
-        configs['nn_optimizer'] = trial.suggest_categorical('optimizer', ['opt.Adamax', 'opt.RAdam'])
-        configs['nn_loss'] = trial.suggest_categorical('loss', ['nn.MSELoss', 'nn.HuberLoss', 'nn.SmoothL1Loss'])
-        configs['nn_parameters']['lr'] = trial.suggest_float('learning_rate', low=0.0001, high=10, log=True)
-        configs['nn_parameters']['batch_size'] = trial.suggest_int('batch_size', low=35, high=275)
-        configs['nn_parameters']['max_epochs'] = trial.suggest_int('max_epochs', low=3, high=15)
-        configs['nn_depth'] = trial.suggest_int('depth', low=1, high=4)
+        # configs['nn_optimizer'] = trial.suggest_categorical('optimizer', ['opt.Adamax', 'opt.RAdam'])
+        # configs['nn_loss'] = trial.suggest_categorical('loss', ['nn.MSELoss', 'nn.HuberLoss', 'nn.SmoothL1Loss'])
+        configs['nn_parameters']['lr'] = trial.suggest_float('learning_rate', low=0.0001, high=2, log=True)
+        configs['nn_parameters']['batch_size'] = trial.suggest_int('batch_size', low=25, high=275)
+        configs['nn_parameters']['max_epochs'] = trial.suggest_int('max_epochs', low=3, high=20)
+        configs['nn_depth'] = trial.suggest_int('depth', low=1, high=3)
 
-        configs['nn_width'] = [configs['selection_rf_max_feats']]
+        configs['nn_width'] = [configs['regression_params']['k_best']]
         configs['nn_dropout'] = []
         configs['nn_activation'] = []
         for layer in range(configs['nn_depth']):
@@ -150,6 +152,9 @@ def objective(trial, x, y):
         if model_method in [Regressor.xgb, Regressor.gaussian_process]:
                     if 'regression_params' in configs:
                         del configs['regression_params']
+        # elif model_method is Regressor.neural_network:
+        #     if 'regression_params' in configs:
+        #         del configs['regression_params']
 
          
 
