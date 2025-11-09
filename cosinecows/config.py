@@ -11,14 +11,12 @@ class RunMode(Enum):
     optuna_search = auto()
     optuna_config = auto()
 
-
 class Imputer(Enum):
     mean = auto()
     median = auto()
     most_frequent = auto()
     knn = auto()
     iterative = auto()
-
 
 class OutlierDetector(Enum):
     zscore = auto()
@@ -27,7 +25,6 @@ class OutlierDetector(Enum):
     svm = auto()
     pca_svm = auto()
     pca_isoforest = auto()
-
 
 class Regressor(Enum):
     xgb = auto()

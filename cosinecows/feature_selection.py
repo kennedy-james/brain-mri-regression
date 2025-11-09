@@ -72,7 +72,7 @@ def feature_selection(x_train, y_train, thresh_var=0.01, thresh_corr=0.95, rf_ma
 
     print(f'Using feature selection pipeline with: {thresh_var = }, {k_best = }')
     selection = make_pipeline(
-        SimpleImputer(strategy='median'),  # ensure no NaNs
+        #SimpleImputer(strategy='median'),  # ensure no NaNs
         RobustScaler(),  # robust scaling
         VarianceThreshold(threshold=thresh_var),  # low variance removal
         PrintShape(message="after VarianceThreshold"),  # Logs after this step

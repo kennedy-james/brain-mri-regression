@@ -22,13 +22,76 @@ from sklearn.compose import TransformedTargetRegressor
 from pytorch_tabnet.tab_model import TabNetRegressor
 from skorch.dataset import Dataset
 from catboost import CatBoostRegressor, Pool
+from sklearn.base import BaseEstimator, RegressorMixin, clone
+from sklearn.utils.validation import check_is_fitted, check_X_y, check_array
+from skorch.callbacks import EarlyStopping
+from sklearn.model_selection import train_test_split
 
 
 from cosinecows.config import configs, Regressor
 from cosinecows.feature_selection import PassthroughSelector, feature_selection
 from cosinecows.imputation import imputation
 from cosinecows.outlier_detection import outlier_detection
+    
+class EarlyStopWrapper(BaseEstimator, RegressorMixin):
+    """Wrapper that adds early stopping to compatible regressors (like XGB or CatBoost)."""
+    def __init__(self, estimator, early_stopping_rounds=20, val_size=0.025, random_state=42):
+        self.estimator = estimator.set_params(early_stopping_rounds=early_stopping_rounds)
+        self.early_stopping_rounds = early_stopping_rounds
+        self.val_size = val_size
+        self.random_state = random_state
+    def fit(self, X, y):
+        X, y = check_X_y(X, y, multi_output=True)
+        self.n_features_in_ = X.shape[1]
+            
+        X_train, X_val, y_train, y_val = train_test_split(
+            X, y, test_size=self.val_size, random_state=self.random_state
+        )
+    
+        self.estimator.fit(
+            X_train, y_train,
+            eval_set=[(X_val, y_val)],
+            verbose=False
+        )
+        # Check if early stopping was triggered
+        best_iter = self.estimator.best_iteration if isinstance(self.estimator, XGBRegressor) else self.estimator.best_iteration_ if isinstance(self.estimator, CatBoostRegressor) else None
+        max_iter = self.estimator.n_estimators if isinstance(self.estimator, XGBRegressor) else self.estimator.get_params()['iterations'] if isinstance(self.estimator, CatBoostRegressor) else None
+        
+        if best_iter is not None and max_iter is not None:
+            if best_iter >= max_iter - 1:
+                print("❌❌❌ Early stopping not triggered!")
+        self.is_fitted_ = True
+        return self
+    def predict(self, X):
+        check_is_fitted(self, "is_fitted_")
+        X = check_array(X)
+        return self.estimator.predict(X)
 
+    def __sklearn_tags__(self):
+        tags = super().__sklearn_tags__()
+        tags.estimator_type = "regressor"
+        tags.non_deterministic = True
+        tags.target_tags.required = True
+        tags.target_tags.multi_output = True
+        return tags
+    def get_params(self, deep=True):
+        params = super().get_params(deep=False)
+        if deep and hasattr(self.estimator, "get_params"):
+            for k, v in self.estimator.get_params(deep=True).items():
+                params[f"estimator__{k}"] = v
+        return params
+    def set_params(self, **params):
+        est_params = {}
+        for k, v in list(params.items()):
+            if k.startswith("estimator__"):
+                est_params[k[len("estimator__"):]] = v
+                params.pop(k)
+        for k, v in params.items():
+            setattr(self, k, v)
+        if est_params:
+            self.estimator.set_params(**est_params)
+        return self
+    
 class Float32Dataset(Dataset):
     def __init__(self, X, y=None):
         X = np.asarray(X, dtype=np.float32)
@@ -79,6 +142,8 @@ def build_nn(X):
     )
     return nn_model
 
+
+
 def fit(X, y):
     """Training of the model
 
@@ -94,85 +159,10 @@ def fit(X, y):
     model_name = configs["regression_method"]
     print(f"Fitting model: {model_name}")
 
-    if model_name is Regressor.xgb:
-        # check if optuna provided set of tuned params
-        if 'regression_params' in configs:
-            print("Using tuned XGBoost parameters from Optuna...")
-            model = XGBRegressor(**configs['regression_params'])
-        else:
-            model = XGBRegressor(
-                random_state=configs["random_state"],
-                n_estimators=300,
-                max_depth=5,  # shallower trees
-                min_child_weight=15,  # require more samples per leaf
-                gamma=1.0,  # stronger split penalty
-                subsample=0.75,
-                colsample_bytree=0.4,  # fewer features per tree
-                reg_alpha=0.5,
-                reg_lambda=3.0,
-                learning_rate=0.03,
-                eval_metric=configs['xgb_eval_metric'],
-                early_stopping_rounds=configs['xgb_early_stopping_rounds'],
-                verbosity=0
-            )
-    elif model_name is Regressor.gaussian_process:
-
-        if 'regression_params' in configs:
-            print("Using tuned GPR parameters from Optuna...")
-            kernel = RationalQuadratic(length_scale=configs['regression_config']['length_scale'],
-                                       alpha=configs['regression_config']['alpha'])
-            model = GaussianProcessRegressor(random_state=configs["random_state"], alpha=configs['regression_config']['gp_alpha'],
-                                           #n_restarts_optimizer=5, 
-                                           kernel=kernel)
-
-        else:
-            print("Using default GPR parameters...")
-            model = GaussianProcessRegressor(
-                random_state=configs["random_state"],
-                kernel=RationalQuadratic(length_scale=1.0, alpha=1.0)
-            )
-        
-        pipe = Pipeline([
-            ('scale_x', StandardScaler()),
-            ('gpr', model)
-        ])
-
-        model = TransformedTargetRegressor(
-            regressor=pipe,
-            transformer=StandardScaler()
-        )
-
-    elif model_name is Regressor.extra_trees:
-        model = ExtraTreesRegressor(
-            random_state=configs["random_state"],
-            **configs['xtrees_parameters'],
-            n_jobs=-1  # Use all cores
-        )
-    elif model_name is Regressor.svr:
-        model = make_pipeline(
-            StandardScaler(),
-            SVR(
-                kernel=configs['svr_kernel'],
-                C=configs['svr_C'],
-                epsilon=configs['svr_epsilon'],
-                gamma=configs['svr_gamma']
-            )
-        )
-    elif model_name is Regressor.ridge:
-        # Ridge is sensitive to feature scales, so we pipeline a scaler
-        model = make_pipeline(
-            StandardScaler(),
-            Ridge(random_state=configs["random_state"])
-        )
-    elif model_name is Regressor.random_forest_regressor:
-        model = RandomForestRegressor(
-            random_state=configs["random_state"],
-            n_estimators=100,  # Using same default as ExtraTrees
-            n_jobs=-1
-        )
-    elif model_name is Regressor.stacking:
+    if model_name is Regressor.stacking:
         print("Defining stacked model...")
-
+        model = None
+        estimators = None
 
         estimators = [
             ('svr', SVR(
@@ -180,30 +170,44 @@ def fit(X, y):
                 epsilon=0.11
             )),
             ('xgb', XGBRegressor(
-                n_estimators=2410,
-                max_depth=5,
-                min_child_weight=13,
-                gamma=2.372524993310688,
-                subsample=0.7462741587810254,
-                colsample_bytree=0.6076272376281038,
-                reg_alpha=1.3240662642357892,
-                reg_lambda=2.586392652975843,
-                learning_rate=0.03332460602580017,
-                random_state=configs["random_state"]
+                    n_estimators=2410,
+                    max_depth=5,
+                    min_child_weight=13,
+                    gamma=2.372524993310688,
+                    subsample=0.7462741587810254,
+                    colsample_bytree=0.6076272376281038,
+                    reg_alpha=1.3240662642357892,
+                    reg_lambda=2.586392652975843,
+                    learning_rate=0.03332460602580017,
+                    random_state=configs["random_state"]
             )),
             #('xgb', XGBRegressor(
-            #    n_estimators=10000,
-            #    max_depth=9,
-            #    min_child_weight=14,
-            #    gamma=1.4692138346993904,
-            #    subsample=0.5242435898389789,
-            #    colsample_bytree=0.7983736226513591,
-            #    reg_alpha=1.0788677992397164,
-            #    reg_lambda=2.1877404829230365,
-            #    learning_rate=0.0018296906700668437,
-            #    random_state=configs["random_state"]
+            #        n_estimators=2410,
+            #        max_depth=5,
+            #        min_child_weight=13,
+            #        gamma=2.372524993310688,
+            #        subsample=0.7462741587810254,
+            #        colsample_bytree=0.6076272376281038,
+            #        reg_alpha=1.3240662642357892,
+            #        reg_lambda=2.586392652975843,
+            #        learning_rate=0.03332460602580017,
+            #        random_state=configs["random_state"]
             #)),
-
+            #('xgb', EarlyStopWrapper(
+            #    XGBRegressor(
+            #        n_estimators=10000,
+            #        max_depth=9,
+            #        min_child_weight=14,
+            #        gamma=1.4692138346993904,
+            #        subsample=0.5242435898389789,
+            #        colsample_bytree=0.7983736226513591,
+            #        reg_alpha=1.0788677992397164,
+            #        reg_lambda=2.1877404829230365,
+            #        learning_rate=0.0018296906700668437,
+            #        random_state=configs["random_state"]
+            #    ),
+            #    early_stopping_rounds=300
+            #)),
             ('gp', GaussianProcessRegressor(
                 random_state=configs["random_state"], 
                 alpha=2.965074241784881e-09, #configs['gp_alpha'],
@@ -218,143 +222,29 @@ def fit(X, y):
             )),
             ('nn', build_nn(X)),
 
-            ('catboost', CatBoostRegressor(
-                iterations=3626,
-                learning_rate=0.008013493547220914,
-                depth=7,
-                l2_leaf_reg=0.2530799357736654,
-                early_stopping_rounds=158,
-                random_strength=2.8241003601634453,
-                bagging_temperature=1.4774574019375732,
-                random_state=configs["random_state"],
-                verbose=0
-            )),
-            #regression_config = {
-            #'catboost_parameters': {
-            #    'iterations': 3626, # Should be much greater than 100
-            #    'learning_rate': 0.008013493547220914, # Should be less than 0.7
-            #    'depth': 7, # sometimes good to use 10
-            #    'l2_leaf_reg': 0.2530799357736654,
-            #    'early_stopping_rounds': 158, # at least 50 for several thousand iterations
-            #    'random_strength': 2.8241003601634453,
-            #    'bagging_temperature': 1.4774574019375732
-            #}
+            #('catboost', EarlyStopWrapper(
+            #    CatBoostRegressor(
+            #        iterations=3626,
+            #        learning_rate=0.008013493547220914,
+            #        depth=7,
+            #        l2_leaf_reg=0.2530799357736654,
+            #        #early_stopping_rounds=158,
+            #        random_strength=2.8241003601634453,
+            #        bagging_temperature=1.4774574019375732,
+            #        random_state=configs["random_state"],
+            #        verbose=0
+            #    ), 
+            #    early_stopping_rounds=158
+            #)),
 
         ]
-        # base models: regularized XGB, simple Ridge, and fast SVR
-        # estimators = [
-        #     ('xgb', XGBRegressor(
-        #         random_state=configs["random_state"],
-        #         n_estimators=600,
-        #         max_depth=5,
-        #         min_child_weight=6,
-        #         gamma=0.1,
-        #         subsample=0.8,
-        #         colsample_bytree=0.7,
-        #         reg_alpha=0.2,
-        #         reg_lambda=2.0,
-        #         learning_rate=0.02,
-        #         eval_metric=configs['xgb_eval_metric'],
-        #         verbosity=0
-        #     )),
-        #     ('extra_trees', ExtraTreesRegressor(
-        #         n_estimators=200,
-        #         max_depth=None,
-        #         min_samples_split=4,
-        #         random_state=configs["random_state"],
-        #         n_jobs=-1
-        #     )),
-        #     ('random_forest', RandomForestRegressor(
-        #         n_estimators=200,
-        #         max_depth=None,
-        #         min_samples_split=4,
-        #         random_state=configs["random_state"],
-        #         n_jobs=-1
-        #     )),
-        #     ('svr_linear', make_pipeline(
-        #         StandardScaler(),
-        #         SVR(kernel='linear', C=1.0)
-        #     ))
-        # ]
-
-        # meta-model combining predictions: simple robust Ridge model.
-        # final_estimator = XGBRegressor(
-        #     random_state=configs["random_state"],
-        #     n_estimators=400,
-        #     max_depth=4,
-        #     learning_rate=0.05,
-        #     subsample=0.8,
-        #     colsample_bytree=0.7,
-        #     reg_lambda=1.0,
-        #     reg_alpha=0.2,
-        #     verbosity=0
-        # )
-
-
         # cv=5 means it will use 5-fold cross-validation internally to generate predictions, which prevents data leakage.
         model = StackingRegressor(
             estimators=estimators,
-            # final_estimator=final_estimator,
             cv=5,  # Use 5 folds, 10 is too slow
             n_jobs=-1  # Use all cores
         )
-    elif model_name is Regressor.neural_network:
-        # Construct NN
-        network_architecture = []
-
-        for i in range(configs['nn_depth'] + 1):
-            network_architecture.append(nn.Dropout(configs['nn_dropout'][i]))
-            network_architecture.append(nn.Linear(configs['nn_width'][i], configs['nn_width'][i + 1]))
-            network_architecture.append(eval(configs['nn_activation'][i])())
-            if i != configs['nn_depth']:
-                network_architecture.append(nn.BatchNorm1d(configs['nn_width'][i + 1]))
-        
-        # Define NN
-        neural_network = NeuralNetRegressor(
-            module=nn.Sequential(*network_architecture),
-            **configs["nn_parameters"],
-            criterion=eval(configs['nn_loss']),
-            optimizer=eval(configs['nn_optimizer']),
-            iterator_train__drop_last=True # Avoid crash when batch size 1
-        )
-
-        # Apply transformation to X
-        pipe = Pipeline([
-            ('scale_x', StandardScaler()),
-            ('neural_net', neural_network),
-        ])
-
-        # Apply transformation for y
-        model = TransformedTargetRegressor(
-            regressor=pipe,
-            transformer=StandardScaler()
-        )
-    elif model_name is Regressor.tab_net:
-        model = TabNetRegressor(
-            seed=configs['random_state'],
-            optimizer_fn=eval(configs['optimizer_fn']),
-            **configs['tab_parameters']
-            )
-
-    if isinstance(model, XGBRegressor):
-        x_train_sub, x_val_sub, y_train_sub, y_val_sub = train_test_split(
-            X, y, test_size=0.1, random_state=configs["random_state"]
-        )
-        model.fit(x_train_sub, y_train_sub, eval_set=[(x_val_sub, y_val_sub)], verbose=False)
-    elif model_name is Regressor.neural_network:
-        # skorch / scikit-learn estimators expect NumPy arrays. Ensure float32 to avoid
-        # dtype mismatches between inputs and model parameters (Double vs Float).
-        X = np.asarray(X, dtype=np.float32)
-        y = np.asarray(y, dtype=np.float32).reshape(-1, 1)
-        model.fit(X, y)
-    elif model_name is Regressor.tab_net:
-        y = y.reshape(-1, 1)
-        model.fit(X, y, **configs['tab_fitting'])
-    else:
-        model.fit(X, y)
-
-    if 'regression_params' in configs:
-        del configs['regression_params']  # clean up tuned params to not break next run
+    model.fit(X, y)
 
     return model
 
@@ -379,8 +269,6 @@ def train_model(X, y, i=None):
         print("Using PassthroughSelector (skipping feature selection for tree-based model).")
         selection = PassthroughSelector()
         X_proc = selection.fit_transform(X_filt)
-        #scaler = StandardScaler()
-        #X_proc = scaler.fit_transform(X_proc)
         print(f"Selected features: {X_proc.shape[1]} (all)")
 
     # avoid feature selection for tree-based models
@@ -402,7 +290,6 @@ def train_model(X, y, i=None):
                                       )
         X_proc = selection.transform(X_filt)
         print(f"Selected features: {X_proc.shape[1]}")
-    # =======================
 
     model = fit(X_proc, y_proc)
     return imputer, detector, selection, model, X_proc, y_proc
@@ -461,4 +348,3 @@ def run_cv_experiment(x_data, y_data):
         })
 
     return pd.DataFrame(cv_results_list)
-
