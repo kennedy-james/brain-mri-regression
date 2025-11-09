@@ -42,13 +42,13 @@ class Regressor(Enum):
     tab_net = auto()
 
 
-RUNNING_MODE = RunMode.current_config
+RUNNING_MODE = RunMode.optuna_search
 configs = {
     'folds': 10,
     'random_state': 42,
     'impute_method': Imputer.knn,
     'outlier_method': OutlierDetector.pca_isoforest,
-    'regression_method': Regressor.catboost,
+    'regression_method': Regressor.gaussian_process,
     'optuna': {
         'load_file': 'best_params_xgb.json',
         'objective_to_run': 'xgb', # stacker or xbg

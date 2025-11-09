@@ -43,138 +43,129 @@ def fit(X, y):
     """
     model_name = configs["regression_method"]
     print(f"Fitting model: {model_name}")
+    fs_pipe = feature_selection(
+        score_func='f_regression',
+        k_best=200,
+    )
+
 
     if model_name is Regressor.xgb:
+
         # check if optuna provided set of tuned params
         if 'regression_params' in configs:
             print("Using tuned XGBoost parameters from Optuna...")
             model = XGBRegressor(**configs['regression_params'])
-        else:
-            model = XGBRegressor(
-                random_state=configs["random_state"],
-                n_estimators=300,
-                max_depth=5,  # shallower trees
-                min_child_weight=15,  # require more samples per leaf
-                gamma=1.0,  # stronger split penalty
-                subsample=0.75,
-                colsample_bytree=0.4,  # fewer features per tree
-                reg_alpha=0.5,
-                reg_lambda=3.0,
-                learning_rate=0.03,
-                eval_metric=configs['xgb_eval_metric'],
-                early_stopping_rounds=configs['xgb_early_stopping_rounds'],
-                verbosity=0
-            )
+
+        pipe = Pipeline([
+            ('feature_selection', fs_pipe),
+            ('xgb', model)
+        ])
+
+        model = pipe
+
     elif model_name is Regressor.gaussian_process:
 
         if 'regression_params' in configs:
             print("Using tuned GPR parameters from Optuna...")
-            kernel = RationalQuadratic(length_scale=configs['regression_config']['length_scale'],
-                                       alpha=configs['regression_config']['alpha'])
-            model = GaussianProcessRegressor(random_state=configs["random_state"], alpha=configs['regression_config']['gp_alpha'],
+            kernel = RationalQuadratic(length_scale=configs['regression_params']['length_scale'],
+                                       alpha=configs['regression_params']['alpha'])
+            model = GaussianProcessRegressor(random_state=configs["random_state"], alpha=configs['regression_params']['gp_alpha'],
                                            #n_restarts_optimizer=5, 
                                            kernel=kernel)
-
-        else:
-            print("Using default GPR parameters...")
-            model = GaussianProcessRegressor(
-                random_state=configs["random_state"],
-                kernel=RationalQuadratic(length_scale=1.0, alpha=1.0)
-            )
         
         pipe = Pipeline([
+            ('feature_selection', fs_pipe),
             ('scale_x', StandardScaler()),
             ('gpr', model)
         ])
-
         model = TransformedTargetRegressor(
             regressor=pipe,
             transformer=StandardScaler()
         )
 
-    elif model_name is Regressor.extra_trees:
-        model = ExtraTreesRegressor(
-            random_state=configs["random_state"],
-            **configs['xtrees_parameters'],
-            n_jobs=-1  # Use all cores
-        )
-    elif model_name is Regressor.ridge:
-        # Ridge is sensitive to feature scales, so we pipeline a scaler
-        model = make_pipeline(
-            StandardScaler(),
-            Ridge(random_state=configs["random_state"])
-        )
-    elif model_name is Regressor.random_forest_regressor:
-        model = RandomForestRegressor(
-            random_state=configs["random_state"],
-            n_estimators=100,  # Using same default as ExtraTrees
-            n_jobs=-1
-        )
+    #elif model_name is Regressor.extra_trees:
+    #    model = ExtraTreesRegressor(
+    #        random_state=configs["random_state"],
+    #        **configs['xtrees_parameters'],
+    #        n_jobs=-1  # Use all cores
+    #    )
+    #elif model_name is Regressor.ridge:
+    #    # Ridge is sensitive to feature scales, so we pipeline a scaler
+    #    model = make_pipeline(
+    #        StandardScaler(),
+    #        Ridge(random_state=configs["random_state"])
+    #    )
+    #elif model_name is Regressor.random_forest_regressor:
+    #    model = RandomForestRegressor(
+    #        random_state=configs["random_state"],
+    #        n_estimators=100,  # Using same default as ExtraTrees
+    #        n_jobs=-1
+    #    )
     elif model_name is Regressor.catboost:
         model = CatBoostRegressor(
             random_seed=configs["random_state"],
             **configs['catboost_parameters']
         )
-    elif model_name is Regressor.stacking:
-        print("Defining stacked model...")
-        # base models: regularized XGB, simple Ridge, and fast SVR
-        estimators = [
-            ('xgb', XGBRegressor(
-                random_state=configs["random_state"],
-                n_estimators=600,
-                max_depth=5,
-                min_child_weight=6,
-                gamma=0.1,
-                subsample=0.8,
-                colsample_bytree=0.7,
-                reg_alpha=0.2,
-                reg_lambda=2.0,
-                learning_rate=0.02,
-                eval_metric=configs['xgb_eval_metric'],
-                verbosity=0
-            )),
-            ('extra_trees', ExtraTreesRegressor(
-                n_estimators=200,
-                max_depth=None,
-                min_samples_split=4,
-                random_state=configs["random_state"],
-                n_jobs=-1
-            )),
-            ('random_forest', RandomForestRegressor(
-                n_estimators=200,
-                max_depth=None,
-                min_samples_split=4,
-                random_state=configs["random_state"],
-                n_jobs=-1
-            )),
-            ('svr_linear', make_pipeline(
-                StandardScaler(),
-                SVR(kernel='linear', C=1.0)
-            ))
-        ]
-
-        # meta-model combining predictions: simple robust Ridge model.
-        final_estimator = XGBRegressor(
-            random_state=configs["random_state"],
-            n_estimators=400,
-            max_depth=4,
-            learning_rate=0.05,
-            subsample=0.8,
-            colsample_bytree=0.7,
-            reg_lambda=1.0,
-            reg_alpha=0.2,
-            verbosity=0
-        )
-
-        # cv=5 means it will use 5-fold cross-validation internally to generate predictions, which prevents data leakage.
-        model = StackingRegressor(
-            estimators=estimators,
-            final_estimator=final_estimator,
-            cv=5,  # Use 5 folds, 10 is too slow
-            n_jobs=-1  # Use all cores
-        )
+    #elif model_name is Regressor.stacking:
+    #    print("Defining stacked model...")
+    #    # base models: regularized XGB, simple Ridge, and fast SVR
+    #    estimators = [
+    #        ('xgb', XGBRegressor(
+    #            random_state=configs["random_state"],
+    #            n_estimators=600,
+    #            max_depth=5,
+    #            min_child_weight=6,
+    #            gamma=0.1,
+    #            subsample=0.8,
+    #            colsample_bytree=0.7,
+    #            reg_alpha=0.2,
+    #            reg_lambda=2.0,
+    #            learning_rate=0.02,
+    #            eval_metric=configs['xgb_eval_metric'],
+    #            verbosity=0
+    #        )),
+    #        ('extra_trees', ExtraTreesRegressor(
+    #            n_estimators=200,
+    #            max_depth=None,
+    #            min_samples_split=4,
+    #            random_state=configs["random_state"],
+    #            n_jobs=-1
+    #        )),
+    #        ('random_forest', RandomForestRegressor(
+    #            n_estimators=200,
+    #            max_depth=None,
+    #            min_samples_split=4,
+    #            random_state=configs["random_state"],
+    #            n_jobs=-1
+    #        )),
+    #        ('svr_linear', make_pipeline(
+    #            StandardScaler(),
+    #            SVR(kernel='linear', C=1.0)
+    #        ))
+    #    ]
+#
+    #    # meta-model combining predictions: simple robust Ridge model.
+    #    final_estimator = XGBRegressor(
+    #        random_state=configs["random_state"],
+    #        n_estimators=400,
+    #        max_depth=4,
+    #        learning_rate=0.05,
+    #        subsample=0.8,
+    #        colsample_bytree=0.7,
+    #        reg_lambda=1.0,
+    #        reg_alpha=0.2,
+    #        verbosity=0
+    #    )
+#
+    #    # cv=5 means it will use 5-fold cross-validation internally to generate predictions, which prevents data leakage.
+    #    model = StackingRegressor(
+    #        estimators=estimators,
+    #        final_estimator=final_estimator,
+    #        cv=5,  # Use 5 folds, 10 is too slow
+    #        n_jobs=-1  # Use all cores
+    #    )
     elif model_name is Regressor.neural_network:
-        # Construct NN
+        
         network_architecture = []
 
         for i in range(configs['nn_depth'] + 1):
@@ -195,6 +186,7 @@ def fit(X, y):
 
         # Apply transformation to X
         pipe = Pipeline([
+            ('feature_selection', fs_pipe),
             ('scale_x', StandardScaler()),
             ('neural_net', neural_network),
         ])
@@ -204,32 +196,32 @@ def fit(X, y):
             regressor=pipe,
             transformer=StandardScaler()
         )
-    elif model_name is Regressor.tab_net:
-        model = TabNetRegressor(
-            seed=configs['random_state'],
-            optimizer_fn=eval(configs['optimizer_fn']),
-            **configs['tab_parameters']
-            )
+    #elif model_name is Regressor.tab_net:
+    #    model = TabNetRegressor(
+    #        seed=configs['random_state'],
+    #        optimizer_fn=eval(configs['optimizer_fn']),
+    #        **configs['tab_parameters']
+    #        )
 
-    if isinstance(model, XGBRegressor):
-        x_train_sub, x_val_sub, y_train_sub, y_val_sub = train_test_split(
-            X, y, test_size=0.1, random_state=configs["random_state"]
-        )
-        model.fit(x_train_sub, y_train_sub, eval_set=[(x_val_sub, y_val_sub)], verbose=False)
-    elif model_name is Regressor.neural_network:
+    #if isinstance(model, XGBRegressor):
+    #    x_train_sub, x_val_sub, y_train_sub, y_val_sub = train_test_split(
+    #        X, y, test_size=0.1, random_state=configs["random_state"]
+    #    )
+    #    model.fit(x_train_sub, y_train_sub, eval_set=[(x_val_sub, y_val_sub)], verbose=False)
+    if model_name is Regressor.neural_network:
         # skorch / scikit-learn estimators expect NumPy arrays. Ensure float32 to avoid
         # dtype mismatches between inputs and model parameters (Double vs Float).
         X = np.asarray(X, dtype=np.float32)
         y = np.asarray(y, dtype=np.float32).reshape(-1, 1)
         model.fit(X, y)
-    elif model_name is Regressor.tab_net:
-        y = y.reshape(-1, 1)
-        model.fit(X, y, **configs['tab_fitting'])
+    #elif model_name is Regressor.tab_net:
+    #    y = y.reshape(-1, 1)
+    #    model.fit(X, y, **configs['tab_fitting'])
     else:
         model.fit(X, y)
 
-    if 'regression_params' in configs:
-        del configs['regression_params']  # clean up tuned params to not break next run
+    #if 'regression_params' in configs:
+    #    del configs['regression_params']  # clean up tuned params to not break next run
 
     return model
 
@@ -250,32 +242,35 @@ def train_model(X, y, i=None):
     # === THIS IS THE FIX ===
     # The logic is now simple: if it's a tree model, skip selection.
     model_name = configs["regression_method"]
-    if not configs['selection_is_enabled'] and model_name in [Regressor.xgb, Regressor.extra_trees, Regressor.random_forest_regressor]:
-        print("Using PassthroughSelector (skipping feature selection for tree-based model).")
-        selection = PassthroughSelector()
-        X_proc = selection.fit_transform(X_filt)
-        #scaler = StandardScaler()
-        #X_proc = scaler.fit_transform(X_proc)
-        print(f"Selected features: {X_proc.shape[1]} (all)")
-
-    # avoid feature selection for tree-based models
-    elif model_name in [Regressor.xgb, Regressor.extra_trees, Regressor.random_forest_regressor]:
-        print(f"Skipping feature selection for {model_name.name} (tree-based or stacking). Using PassthroughSelector.")
-        selection = PassthroughSelector()
-        X_proc = selection.fit_transform(X_filt)
-        print(f"Selected features: {X_proc.shape[1]} (all)")
-
-    else:
-        # This will now correctly run for Ridge or Stacking
-        print("Running feature_selection pipeline for non-tree model...")
-        selection = feature_selection(X_filt, y_proc,
-                                      thresh_var=configs['selection_thresh_var'],
-                                      thresh_corr=configs['selection_thresh_corr'],
-                                      rf_max_feats=configs['selection_rf_max_feats'],
-                                      percentile=configs['selection_percentile']
-                                      )
-        X_proc = selection.transform(X_filt)
-        print(f"Selected features: {X_proc.shape[1]}")
+    #if not configs['selection_is_enabled'] and model_name in [Regressor.xgb, Regressor.extra_trees, Regressor.random_forest_regressor]:
+    #    print("Using PassthroughSelector (skipping feature selection for tree-based model).")
+    #    selection = PassthroughSelector()
+    #    X_proc = selection.fit_transform(X_filt)
+    #    #scaler = StandardScaler()
+    #    #X_proc = scaler.fit_transform(X_proc)
+    #    print(f"Selected features: {X_proc.shape[1]} (all)")
+#
+    ## avoid feature selection for tree-based models
+    #elif model_name in [Regressor.xgb, Regressor.extra_trees, Regressor.random_forest_regressor]:
+    #    print(f"Skipping feature selection for {model_name.name} (tree-based or stacking). Using PassthroughSelector.")
+    #    selection = PassthroughSelector()
+    #    X_proc = selection.fit_transform(X_filt)
+    #    print(f"Selected features: {X_proc.shape[1]} (all)")
+#
+    #else:
+    #    # This will now correctly run for Ridge or Stacking
+    #    print("Running feature_selection pipeline for non-tree model...")
+    #    selection = feature_selection(X_filt, y_proc,
+    #                                  thresh_var=configs['selection_thresh_var'],
+    #                                  thresh_corr=configs['selection_thresh_corr'],
+    #                                  rf_max_feats=configs['selection_rf_max_feats'],
+    #                                  percentile=configs['selection_percentile']
+    #                                  )
+    #    X_proc = selection.transform(X_filt)
+    X_proc = X_filt
+    print(f"Selected features: {X_proc.shape[1]}")
+    selection = None
+    
     # =======================
 
     model = fit(X_proc, y_proc)
@@ -319,7 +314,8 @@ def run_cv_experiment(x_data, y_data):
         val_mask = detector(x_val_imputed)
         x_val_filt = x_val_imputed[val_mask, :]
         y_val = y_val[val_mask]
-        x_val_selected = selection.transform(x_val_filt)
+        #x_val_selected = selection.transform(x_val_filt)
+        x_val_selected = x_val_filt
         if configs["regression_method"] is Regressor.neural_network:
             x_val_selected = np.asarray(x_val_selected, dtype=np.float32)
         y_val_pred = model.predict(x_val_selected)

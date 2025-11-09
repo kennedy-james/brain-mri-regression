@@ -55,20 +55,17 @@ def objective(trial, x, y):
             'verbosity': 0
         }
     if configs['regression_method'] == Regressor.gaussian_process:
-        #configs['selection_percentile'] = trial.suggest_int('selection_percentile', 15, 50)
-        #configs['selection_rf_max_feats'] = trial.suggest_int('selection_rf_max_feats', 25, 125)
-        #configs['regression_params'] = {
-        #    'random_state': configs["random_state"],
-        #    'length_scale': trial.suggest_float('length_scale', low=4, high=10),
-        #    'alpha': trial.suggest_float('alpha', low=0.4, high=0.8),
-        #    'gp_alpha': trial.suggest_float('gp_alpha', low=1.0e-10, high=1.0e-7, log=True),
-        #}
-        #{'selection_percentile': 32, 'selection_rf_max_feats': 44, 'length_scale': 6.124209435262154, 'alpha': 0.669737299146556, 'gp_alpha': 2.965074241784881e-09}
-        configs['selection_percentile'] = 32
-        configs['selection_rf_max_feats'] = 44
-        configs['regression_params']['length_scale'] = 6.124209435262154
-        configs['regression_params']['alpha'] = 0.669737299146556
-        configs['regression_params']['gp_alpha'] = 2.965074241784881e-09
+        configs['selection_percentile'] = trial.suggest_int('selection_percentile', 20, 50)
+        configs['selection_rf_max_feats'] = trial.suggest_int('selection_rf_max_feats', 30, 50)
+        
+        configs['regression_params'] = {
+            'random_state': configs["random_state"],
+            'length_scale': trial.suggest_float('length_scale', low=4, high=10),
+            'alpha': trial.suggest_float('alpha', low=0.4, high=0.8),
+            'noise_level': trial.suggest_float('noise_level', low=0.02, high=0.3, log=True),
+            'gp_alpha': trial.suggest_float('gp_alpha', low=1.0e-10, high=1.0e-7, log=True),
+            'n_restarts_optimizer': trial.suggest_int('n_restarts_optimizer', low=2, high=10),
+        }
     if configs['regression_method'] == Regressor.neural_network:
         configs['selection_percentile'] = trial.suggest_int('selection_percentile', 15, 75)
         configs['selection_rf_max_feats'] = trial.suggest_int('selection_rf_max_feats', 25, 200)
