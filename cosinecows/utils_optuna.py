@@ -38,33 +38,40 @@ def objective(trial, x, y):
 
     # Tune XGBoost parameters for a HIGH-DIMENSIONAL (832 features) dataset
     if configs['regression_method'] == Regressor.xgb:
-        configs['regression_params'] = {
+        configs['regression_params'] = { 
+            'k_best': trial.suggest_int('k_best', 30, 400),
+            'score_func': trial.suggest_categorical('score_func', ['f_regression', 'mutual_info_regression']),
+
+
             'random_state': configs["random_state"],
-            'n_estimators': trial.suggest_int('n_estimators', low=400, high=2500),
-            'max_depth': trial.suggest_int('max_depth', low=4, high=9),
+            #'n_estimators': trial.suggest_int('n_estimators', low=400, high=2500),
+            'n_estimators': trial.suggest_int('n_estimators', low=800, high=5000),
+            'max_depth': trial.suggest_int('max_depth', low=6, high=15),
             'min_child_weight': trial.suggest_int('min_child_weight', low=10, high=25),
-            'gamma': trial.suggest_float('gamma', low=0.5, high=3.0),
-            'subsample': trial.suggest_float('subsample', low=0.65, high=1.0),
+            'gamma': trial.suggest_float('gamma', low=1.0, high=2.5),
+            'subsample': trial.suggest_float('subsample', low=0.4, high=1.0),
             'colsample_bytree': trial.suggest_float('colsample_bytree', low=0.3, high=1.0), 
-            'reg_alpha': trial.suggest_float('reg_alpha', low=0.1, high=2.5),
+            'reg_alpha': trial.suggest_float('reg_alpha', low=0.5, high=2.0),
             #'reg_alpha': 2,
-            'reg_lambda': trial.suggest_float('reg_lambda', low=2.0, high=6.0),  # Higher L2 for high-D
+            'reg_lambda': trial.suggest_float('reg_lambda', low=1.5, high=5.0),  # Higher L2 for high-D
             #'reg_lambda': 4.0,
-            'learning_rate': trial.suggest_float('learning_rate', low=0.01, high=0.1, log=True),
+            'learning_rate': trial.suggest_float('learning_rate', low=0.0006, high=0.01, log=True),
             #'learning_rate': 0.05,
             'verbosity': 0
         }
     if configs['regression_method'] == Regressor.gaussian_process:
-        configs['selection_percentile'] = trial.suggest_int('selection_percentile', 20, 50)
-        configs['selection_rf_max_feats'] = trial.suggest_int('selection_rf_max_feats', 30, 50)
         
         configs['regression_params'] = {
+            'k_best': trial.suggest_int('k_best', 30, 400),
+            'score_func': trial.suggest_categorical('score_func', ['f_regression', 'mutual_info_regression']),
+
             'random_state': configs["random_state"],
-            'length_scale': trial.suggest_float('length_scale', low=4, high=10),
+            'length_scale': trial.suggest_float('length_scale', low=4, high=7),
             'alpha': trial.suggest_float('alpha', low=0.4, high=0.8),
-            'noise_level': trial.suggest_float('noise_level', low=0.02, high=0.3, log=True),
+            #'noise_level': trial.suggest_float('noise_level', low=0.02, high=0.3, log=True),
             'gp_alpha': trial.suggest_float('gp_alpha', low=1.0e-10, high=1.0e-7, log=True),
-            'n_restarts_optimizer': trial.suggest_int('n_restarts_optimizer', low=2, high=10),
+            #'n_restarts_optimizer': trial.suggest_int('n_restarts_optimizer', low=2, high=10),
+
         }
     if configs['regression_method'] == Regressor.neural_network:
         configs['selection_percentile'] = trial.suggest_int('selection_percentile', 15, 75)
@@ -138,6 +145,11 @@ def objective(trial, x, y):
     except Exception as e:
         print(f"--- ❌ TRIAL FAILED: {e} ---")
         return -1.0  # Return a very bad score
+    finally:
+        model_method = configs['regression_method']
+        if model_method in [Regressor.xgb, Regressor.gaussian_process]:
+                    if 'regression_params' in configs:
+                        del configs['regression_params']        
 
     return mean_val_score
 

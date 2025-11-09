@@ -44,8 +44,8 @@ def fit(X, y):
     model_name = configs["regression_method"]
     print(f"Fitting model: {model_name}")
     fs_pipe = feature_selection(
-        score_func='f_regression',
-        k_best=200,
+        score_func=configs['regression_params']['score_func'],
+        k_best=configs['regression_params']['k_best'],
     )
 
 
@@ -70,7 +70,7 @@ def fit(X, y):
             kernel = RationalQuadratic(length_scale=configs['regression_params']['length_scale'],
                                        alpha=configs['regression_params']['alpha'])
             model = GaussianProcessRegressor(random_state=configs["random_state"], alpha=configs['regression_params']['gp_alpha'],
-                                           #n_restarts_optimizer=5, 
+                                           #n_restarts_optimizer=configs['regression_params']['n_restarts_optimizer'], 
                                            kernel=kernel)
         
         pipe = Pipeline([
