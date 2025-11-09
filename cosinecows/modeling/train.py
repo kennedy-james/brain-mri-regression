@@ -6,7 +6,7 @@ import numpy as np
 import torch
 import torch.optim as opt
 import torch.nn as nn
-from sklearn.ensemble import ExtraTreesRegressor, RandomForestRegressor, StackingRegressor, BaggingRegressor
+from sklearn.ensemble import ExtraTreesRegressor, RandomForestRegressor, StackingRegressor, BaggingRegressor, VotingRegressor
 from sklearn.linear_model import Ridge
 from sklearn.metrics import r2_score
 from sklearn.model_selection import train_test_split, KFold
@@ -179,16 +179,19 @@ def fit(X, y):
                 C=86, 
                 epsilon=0.11
             )),
-            ('xgb', XGBRegressor(
-                n_estimators=2410,
-                max_depth=5,
-                min_child_weight=13,
-                gamma=2.372524993310688,
-                subsample=0.7462741587810254,
-                colsample_bytree=0.6076272376281038,
-                reg_alpha=1.3240662642357892,
-                reg_lambda=2.586392652975843,
-                learning_rate=0.03332460602580017,
+            ('xgb', BaggingRegressor(
+                estimator=XGBRegressor(
+                    n_estimators=2410,
+                    max_depth=5,
+                    min_child_weight=13,
+                    gamma=2.372524993310688,
+                    subsample=0.7462741587810254,
+                    colsample_bytree=0.6076272376281038,
+                    reg_alpha=1.3240662642357892,
+                    reg_lambda=2.586392652975843,
+                    learning_rate=0.03332460602580017,
+                    random_state=configs["random_state"]
+                ),
                 random_state=configs["random_state"]
             )),
             #('xgb', XGBRegressor(
@@ -204,21 +207,28 @@ def fit(X, y):
             #    random_state=configs["random_state"]
             #)),
 
-            ('gp', GaussianProcessRegressor(
-                random_state=configs["random_state"], 
-                alpha=2.965074241784881e-09, #configs['gp_alpha'],
-                kernel=RationalQuadratic(
-                    length_scale=6.124209435262154, #configs['gp_kernel_length_scale'],
-                    alpha=0.669737299146556, #configs['gp_kernel_alpha']
-                )
+            ('gp', BaggingRegressor(
+                estimator=GaussianProcessRegressor(
+                    random_state=configs["random_state"], 
+                    alpha=2.965074241784881e-09, #configs['gp_alpha'],
+                    kernel=RationalQuadratic(
+                        length_scale=6.124209435262154, #configs['gp_kernel_length_scale'],
+                        alpha=0.669737299146556, #configs['gp_kernel_alpha']
+                    )
+                ),
+                random_state=configs["random_state"]
             )),
             ('bagging_svr', BaggingRegressor(
                 estimator=SVR(C=88, epsilon=0.09),
                 random_state=configs["random_state"],
             )),
-            ('nn', build_nn(X)),
+            ('nn', BaggingRegressor(
+                estimator=build_nn(X),
+                random_state=configs["random_state"])
+            ),
 
-            ('catboost', CatBoostRegressor(
+            ('catboost', BaggingRegressor(
+                estimator=CatBoostRegressor(
                 iterations=3626,
                 learning_rate=0.008013493547220914,
                 depth=7,
@@ -227,7 +237,8 @@ def fit(X, y):
                 random_strength=2.8241003601634453,
                 bagging_temperature=1.4774574019375732,
                 random_state=configs["random_state"],
-                verbose=0
+                verbose=0),
+                random_state=configs['random_state']
             )),
             #regression_config = {
             #'catboost_parameters': {
@@ -294,7 +305,7 @@ def fit(X, y):
         # cv=5 means it will use 5-fold cross-validation internally to generate predictions, which prevents data leakage.
         model = StackingRegressor(
             estimators=estimators,
-            # final_estimator=final_estimator,
+            final_estimator=Ridge(),
             cv=5,  # Use 5 folds, 10 is too slow
             n_jobs=-1  # Use all cores
         )
