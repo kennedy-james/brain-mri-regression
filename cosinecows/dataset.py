@@ -13,7 +13,7 @@ REPORTS_DIR = PROJECT_ROOT / 'reports'
 FIGURES_DIR = REPORTS_DIR / 'figures'
 MODELS_DIR = PROJECT_ROOT / 'models'
 IMPUTERS_DIR = MODELS_DIR / 'imputers'
-REGRESSORS_DIR = MODELS_DIR / 'regressors'
+REGRESSORS_DIR = MODELS_DIR #/ 'regressors'
 
 def load_train_data():
     """Loads training data from CSV files.

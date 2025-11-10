@@ -42,9 +42,9 @@ class Regressor(Enum):
     svr = auto()
 
 
-RUNNING_MODE = RunMode.current_config
+RUNNING_MODE = RunMode.final_evaluation
 configs = {
-    'folds': 5,
+    'folds': 10,
     'random_state': 42,
     'impute_method': Imputer.knn,
     'outlier_method': OutlierDetector.pca_isoforest,

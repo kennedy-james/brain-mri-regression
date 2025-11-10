@@ -37,7 +37,7 @@ class Float32Dataset(Dataset):
         super().__init__(X, y)
 
 def build_nn(X):
-    input_dim = 194
+    input_dim = 53
     nn_depth      = 1
     nn_dropout    = [0.06964138137676289, 0.24215516087193295]
     nn_width      = [input_dim, 36, 1]
@@ -185,23 +185,23 @@ def fit(X, y):
         ##############################
         xgb_f = feature_selection(
             score_func='f_regression',
-            k_best=194,
+            k_best=201,
         )
 
         xgb_model= XGBRegressor(
-                    n_estimators=2410,
-                    max_depth=5,
+                    n_estimators=4563,
+                    max_depth=6,
                     min_child_weight=13,
-                    gamma=2.372524993310688,
-                    subsample=0.7462741587810254,
-                    colsample_bytree=0.6076272376281038,
-                    reg_alpha=1.3240662642357892,
-                    reg_lambda=2.586392652975843,
-                    learning_rate=0.03332460602580017,
+                    gamma=1.087304331334667,
+                    subsample=0.4598613844539232,
+                    colsample_bytree=0.8360514902773765,
+                    reg_alpha=0.5009518183656549,
+                    reg_lambda=2.9324605767035323,
+                    learning_rate=0.0066215147930692225,
                     random_state=configs["random_state"]
             )
         xgb_pipeline = Pipeline([
-            ('feature_selection', fs_pipe_old),
+            ('feature_selection', xgb_f),
             ('xgb', xgb_model)
         ])
         #################################
@@ -212,15 +212,15 @@ def fit(X, y):
 
         gpr_model = GaussianProcessRegressor(
                     random_state=configs["random_state"], 
-                    alpha=1.150916807689901e-10, #configs['gp_alpha'],
+                    alpha=3.935643578586644e-10, #configs['gp_alpha'],
                     kernel=RationalQuadratic(
-                        length_scale=6.444495276778937, #configs['gp_kernel_length_scale'],
-                        alpha=0.7247801647720756, #configs['gp_kernel_alpha']
+                        length_scale=6.240171100411289, #configs['gp_kernel_length_scale'],
+                        alpha=0.7052022185369317, #configs['gp_kernel_alpha']
                     )
             )
         
         gp_pipeline = Pipeline([
-            ('feature_selection', gpr_f),
+            ('feature_selection', fs_pipe_old),
             ('standard_scaler', StandardScaler()),
             ('gpr', gpr_model)
         ])
@@ -242,20 +242,20 @@ def fit(X, y):
                 random_state=configs["random_state"],
             )
         svr_bagging_pipeline = Pipeline([
-            ('feature_selection', svr_bagging_f),
+            ('feature_selection', fs_pipe_old),
             ('standard_scaler', StandardScaler()),
             ('bagging_svr', svr_bagging_model)
         ])
         ###############################
         nn_f = feature_selection(
             score_func='random_forest_regressor',
-            k_best=50,
+            k_best=53,
         )
 
         nn_model = build_nn(X)
 
         nn_pipeline = Pipeline([
-            ('feature_selection', fs_pipe_old),
+            ('feature_selection', nn_f),
             ('nn', nn_model)
         ])
 
