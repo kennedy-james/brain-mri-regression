@@ -42,7 +42,7 @@ class Regressor(Enum):
     svr = auto()
 
 
-RUNNING_MODE = RunMode.final_evaluation
+RUNNING_MODE = RunMode.current_config
 configs = {
     'folds': 5,
     'random_state': 42,

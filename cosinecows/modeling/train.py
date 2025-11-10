@@ -21,11 +21,11 @@ from sklearn.pipeline import Pipeline
 from sklearn.compose import TransformedTargetRegressor
 from pytorch_tabnet.tab_model import TabNetRegressor
 from skorch.dataset import Dataset
-from catboost import CatBoostRegressor, Pool
+#from catboost import CatBoostRegressor, Pool
 
 
 from cosinecows.config import configs, Regressor
-from cosinecows.feature_selection import PassthroughSelector, feature_selection
+from cosinecows.feature_selection import PassthroughSelector, feature_selection, feature_selection_old
 from cosinecows.imputation import imputation
 from cosinecows.outlier_detection import outlier_detection
 
@@ -37,7 +37,7 @@ class Float32Dataset(Dataset):
         super().__init__(X, y)
 
 def build_nn(X):
-    input_dim = X.shape[1]
+    input_dim = 194
     nn_depth      = 1
     nn_dropout    = [0.06964138137676289, 0.24215516087193295]
     nn_width      = [input_dim, 36, 1]
@@ -94,93 +94,101 @@ def fit(X, y):
     model_name = configs["regression_method"]
     print(f"Fitting model: {model_name}")
 
-    if model_name is Regressor.xgb:
-        # check if optuna provided set of tuned params
-        if 'regression_params' in configs:
-            print("Using tuned XGBoost parameters from Optuna...")
-            model = XGBRegressor(**configs['regression_params'])
-        else:
-            model = XGBRegressor(
-                random_state=configs["random_state"],
-                n_estimators=300,
-                max_depth=5,  # shallower trees
-                min_child_weight=15,  # require more samples per leaf
-                gamma=1.0,  # stronger split penalty
-                subsample=0.75,
-                colsample_bytree=0.4,  # fewer features per tree
-                reg_alpha=0.5,
-                reg_lambda=3.0,
-                learning_rate=0.03,
-                eval_metric=configs['xgb_eval_metric'],
-                early_stopping_rounds=configs['xgb_early_stopping_rounds'],
-                verbosity=0
-            )
-    elif model_name is Regressor.gaussian_process:
+    #fs_pipe = feature_selection(
+    #    score_func=configs['regression_params']['score_func'],
+    #    k_best=configs['regression_params']['k_best'],
+    #)
 
-        if 'regression_params' in configs:
-            print("Using tuned GPR parameters from Optuna...")
-            kernel = RationalQuadratic(length_scale=configs['regression_config']['length_scale'],
-                                       alpha=configs['regression_config']['alpha'])
-            model = GaussianProcessRegressor(random_state=configs["random_state"], alpha=configs['regression_config']['gp_alpha'],
-                                           #n_restarts_optimizer=5, 
-                                           kernel=kernel)
+    fs_pipe_old = feature_selection_old(
+        k_best=194,
+    )
 
-        else:
-            print("Using default GPR parameters...")
-            model = GaussianProcessRegressor(
-                random_state=configs["random_state"],
-                kernel=RationalQuadratic(length_scale=1.0, alpha=1.0)
-            )
-        
-        pipe = Pipeline([
-            ('scale_x', StandardScaler()),
-            ('gpr', model)
-        ])
+    #if model_name is Regressor.xgb:
+    #    # check if optuna provided set of tuned params
+    #    if 'regression_params' in configs:
+    #        print("Using tuned XGBoost parameters from Optuna...")
+    #        model = XGBRegressor(**configs['regression_params'])
+    #    else:
+    #        model = XGBRegressor(
+    #            random_state=configs["random_state"],
+    #            n_estimators=300,
+    #            max_depth=5,  # shallower trees
+    #            min_child_weight=15,  # require more samples per leaf
+    #            gamma=1.0,  # stronger split penalty
+    #            subsample=0.75,
+    #            colsample_bytree=0.4,  # fewer features per tree
+    #            reg_alpha=0.5,
+    #            reg_lambda=3.0,
+    #            learning_rate=0.03,
+    #            eval_metric=configs['xgb_eval_metric'],
+    #            early_stopping_rounds=configs['xgb_early_stopping_rounds'],
+    #            verbosity=0
+    #        )
+    #elif model_name is Regressor.gaussian_process:
+#
+    #    if 'regression_params' in configs:
+    #        print("Using tuned GPR parameters from Optuna...")
+    #        kernel = RationalQuadratic(length_scale=configs['regression_config']['length_scale'],
+    #                                   alpha=configs['regression_config']['alpha'])
+    #        model = GaussianProcessRegressor(random_state=configs["random_state"], alpha=configs['regression_config']['gp_alpha'],
+    #                                       #n_restarts_optimizer=5, 
+    #                                       kernel=kernel)
+#
+    #    else:
+    #        print("Using default GPR parameters...")
+    #        model = GaussianProcessRegressor(
+    #            random_state=configs["random_state"],
+    #            kernel=RationalQuadratic(length_scale=1.0, alpha=1.0)
+    #        )
+    #    
+    #    pipe = Pipeline([
+    #        ('scale_x', StandardScaler()),
+    #        ('gpr', model)
+    #    ])
+#
+    #    model = TransformedTargetRegressor(
+    #        regressor=pipe,
+    #        transformer=StandardScaler()
+    #    )
+#
+    #elif model_name is Regressor.extra_trees:
+    #    model = ExtraTreesRegressor(
+    #        random_state=configs["random_state"],
+    #        **configs['xtrees_parameters'],
+    #        n_jobs=-1  # Use all cores
+    #    )
+    #elif model_name is Regressor.svr:
+    #    model = make_pipeline(
+    #        StandardScaler(),
+    #        SVR(
+    #            kernel=configs['svr_kernel'],
+    #            C=configs['svr_C'],
+    #            epsilon=configs['svr_epsilon'],
+    #            gamma=configs['svr_gamma']
+    #        )
+    #    )
+    #elif model_name is Regressor.ridge:
+    #    # Ridge is sensitive to feature scales, so we pipeline a scaler
+    #    model = make_pipeline(
+    #        StandardScaler(),
+    #        Ridge(random_state=configs["random_state"])
+    #    )
+    #elif model_name is Regressor.random_forest_regressor:
+    #    model = RandomForestRegressor(
+    #        random_state=configs["random_state"],
+    #        n_estimators=100,  # Using same default as ExtraTrees
+    #        n_jobs=-1
+    #    )
 
-        model = TransformedTargetRegressor(
-            regressor=pipe,
-            transformer=StandardScaler()
-        )
-
-    elif model_name is Regressor.extra_trees:
-        model = ExtraTreesRegressor(
-            random_state=configs["random_state"],
-            **configs['xtrees_parameters'],
-            n_jobs=-1  # Use all cores
-        )
-    elif model_name is Regressor.svr:
-        model = make_pipeline(
-            StandardScaler(),
-            SVR(
-                kernel=configs['svr_kernel'],
-                C=configs['svr_C'],
-                epsilon=configs['svr_epsilon'],
-                gamma=configs['svr_gamma']
-            )
-        )
-    elif model_name is Regressor.ridge:
-        # Ridge is sensitive to feature scales, so we pipeline a scaler
-        model = make_pipeline(
-            StandardScaler(),
-            Ridge(random_state=configs["random_state"])
-        )
-    elif model_name is Regressor.random_forest_regressor:
-        model = RandomForestRegressor(
-            random_state=configs["random_state"],
-            n_estimators=100,  # Using same default as ExtraTrees
-            n_jobs=-1
-        )
-    elif model_name is Regressor.stacking:
+    if model_name is Regressor.stacking:
         print("Defining stacked model...")
+        ##############################
+        xgb_f = feature_selection(
+            score_func='f_regression',
+            k_best=194,
+        )
 
-
-        estimators = [
-            ('svr', SVR(
-                C=86, 
-                epsilon=0.11
-            )),
-            ('xgb', BaggingRegressor(
-                estimator=XGBRegressor(
+        xgb_model= XGBRegressor(
                     n_estimators=2410,
                     max_depth=5,
                     min_child_weight=13,
@@ -191,9 +199,74 @@ def fit(X, y):
                     reg_lambda=2.586392652975843,
                     learning_rate=0.03332460602580017,
                     random_state=configs["random_state"]
-                ),
-                random_state=configs["random_state"]
-            )),
+            )
+        xgb_pipeline = Pipeline([
+            ('feature_selection', fs_pipe_old),
+            ('xgb', xgb_model)
+        ])
+        #################################
+        gpr_f = feature_selection(
+            score_func='f_regression',
+            k_best=205,
+        )
+
+        gpr_model = GaussianProcessRegressor(
+                    random_state=configs["random_state"], 
+                    alpha=1.150916807689901e-10, #configs['gp_alpha'],
+                    kernel=RationalQuadratic(
+                        length_scale=6.444495276778937, #configs['gp_kernel_length_scale'],
+                        alpha=0.7247801647720756, #configs['gp_kernel_alpha']
+                    )
+            )
+        
+        gp_pipeline = Pipeline([
+            ('feature_selection', gpr_f),
+            ('standard_scaler', StandardScaler()),
+            ('gpr', gpr_model)
+        ])
+
+        svr_model = SVR(
+                C=86, 
+                epsilon=0.11
+            )
+        svr_pipeline = Pipeline([
+            ('feature_selection', fs_pipe_old),
+            ('standard_scaler', StandardScaler()),
+            ('svr', svr_model)
+        ])
+
+
+        svr_bagging_f = fs_pipe_old
+        svr_bagging_model = BaggingRegressor(
+                estimator=SVR(C=88, epsilon=0.09),
+                random_state=configs["random_state"],
+            )
+        svr_bagging_pipeline = Pipeline([
+            ('feature_selection', svr_bagging_f),
+            ('standard_scaler', StandardScaler()),
+            ('bagging_svr', svr_bagging_model)
+        ])
+        ###############################
+        nn_f = feature_selection(
+            score_func='random_forest_regressor',
+            k_best=50,
+        )
+
+        nn_model = build_nn(X)
+
+        nn_pipeline = Pipeline([
+            ('feature_selection', fs_pipe_old),
+            ('nn', nn_model)
+        ])
+
+
+        estimators = [
+            ('xgb', xgb_pipeline),
+    
+            ('gp', gp_pipeline),
+
+            ('svr', svr_pipeline),
+
             #('xgb', XGBRegressor(
             #    n_estimators=10000,
             #    max_depth=9,
@@ -207,39 +280,21 @@ def fit(X, y):
             #    random_state=configs["random_state"]
             #)),
 
-            ('gp', BaggingRegressor(
-                estimator=GaussianProcessRegressor(
-                    random_state=configs["random_state"], 
-                    alpha=2.965074241784881e-09, #configs['gp_alpha'],
-                    kernel=RationalQuadratic(
-                        length_scale=6.124209435262154, #configs['gp_kernel_length_scale'],
-                        alpha=0.669737299146556, #configs['gp_kernel_alpha']
-                    )
-                ),
-                random_state=configs["random_state"]
-            )),
-            ('bagging_svr', BaggingRegressor(
-                estimator=SVR(C=88, epsilon=0.09),
-                random_state=configs["random_state"],
-            )),
-            ('nn', BaggingRegressor(
-                estimator=build_nn(X),
-                random_state=configs["random_state"])
-            ),
 
-            ('catboost', BaggingRegressor(
-                estimator=CatBoostRegressor(
-                iterations=3626,
-                learning_rate=0.008013493547220914,
-                depth=7,
-                l2_leaf_reg=0.2530799357736654,
-                early_stopping_rounds=158,
-                random_strength=2.8241003601634453,
-                bagging_temperature=1.4774574019375732,
-                random_state=configs["random_state"],
-                verbose=0),
-                random_state=configs['random_state']
-            )),
+            ('bagging_svr', svr_bagging_pipeline),
+            ('nn', nn_pipeline),
+
+            #('catboost', CatBoostRegressor(
+            #    iterations=3626,
+            #    learning_rate=0.008013493547220914,
+            #    depth=7,
+            #    l2_leaf_reg=0.2530799357736654,
+            #    early_stopping_rounds=158,
+            #    random_strength=2.8241003601634453,
+            #    bagging_temperature=1.4774574019375732,
+            #    random_state=configs["random_state"],
+            #    verbose=0
+            #)),
             #regression_config = {
             #'catboost_parameters': {
             #    'iterations': 3626, # Should be much greater than 100
@@ -386,33 +441,36 @@ def train_model(X, y, i=None):
     # === THIS IS THE FIX ===
     # The logic is now simple: if it's a tree model, skip selection.
     model_name = configs["regression_method"]
-    if not configs['selection_is_enabled'] and model_name in [Regressor.xgb, Regressor.extra_trees, Regressor.random_forest_regressor]:
-        print("Using PassthroughSelector (skipping feature selection for tree-based model).")
-        selection = PassthroughSelector()
-        X_proc = selection.fit_transform(X_filt)
-        #scaler = StandardScaler()
-        #X_proc = scaler.fit_transform(X_proc)
-        print(f"Selected features: {X_proc.shape[1]} (all)")
+    #if not configs['selection_is_enabled'] and model_name in [Regressor.xgb, Regressor.extra_trees, Regressor.random_forest_regressor]:
+    #    print("Using PassthroughSelector (skipping feature selection for tree-based model).")
+    #    selection = PassthroughSelector()
+    #    X_proc = selection.fit_transform(X_filt)
+    #    #scaler = StandardScaler()
+    #    #X_proc = scaler.fit_transform(X_proc)
+    #    print(f"Selected features: {X_proc.shape[1]} (all)")
+#
+    ## avoid feature selection for tree-based models
+    #elif model_name in [Regressor.xgb, Regressor.extra_trees, Regressor.random_forest_regressor]:
+    #    print(f"Skipping feature selection for {model_name.name} (tree-based or stacking). Using PassthroughSelector.")
+    #    selection = PassthroughSelector()
+    #    X_proc = selection.fit_transform(X_filt)
+    #    print(f"Selected features: {X_proc.shape[1]} (all)")
 
-    # avoid feature selection for tree-based models
-    elif model_name in [Regressor.xgb, Regressor.extra_trees, Regressor.random_forest_regressor]:
-        print(f"Skipping feature selection for {model_name.name} (tree-based or stacking). Using PassthroughSelector.")
-        selection = PassthroughSelector()
-        X_proc = selection.fit_transform(X_filt)
-        print(f"Selected features: {X_proc.shape[1]} (all)")
-
-    else:
-        # This will now correctly run for Ridge or Stacking
-        print("Running feature_selection pipeline for non-tree model...")
-        selection = feature_selection(X_filt, y_proc,
-                                      thresh_var=configs['selection_thresh_var'],
-                                      thresh_corr=configs['selection_thresh_corr'],
-                                      rf_max_feats=configs['selection_rf_max_feats'],
-                                      percentile=configs['selection_percentile'],
-                                      k_best=configs['selection_k_best'],
-                                      )
-        X_proc = selection.transform(X_filt)
-        print(f"Selected features: {X_proc.shape[1]}")
+    
+    # This will now correctly run for Ridge or Stacking
+    #print("Running feature_selection pipeline for non-tree model...")
+    #selection = feature_selection(X_filt, y_proc,
+    #                              thresh_var=configs['selection_thresh_var'],
+    #                              thresh_corr=configs['selection_thresh_corr'],
+    #                              rf_max_feats=configs['selection_rf_max_feats'],
+    #                              percentile=configs['selection_percentile'],
+    #                              k_best=configs['selection_k_best'],
+    #                              )
+    #
+    #X_proc = selection.transform(X_filt)
+    X_proc = X_filt
+    selection = None
+    print(f"Selected features: {X_proc.shape[1]}")
     # =======================
 
     model = fit(X_proc, y_proc)
@@ -456,9 +514,10 @@ def run_cv_experiment(x_data, y_data):
         val_mask = detector(x_val_imputed)
         x_val_filt = x_val_imputed[val_mask, :]
         y_val = y_val[val_mask]
-        x_val_selected = selection.transform(x_val_filt)
-        if configs["regression_method"] is Regressor.neural_network:
-            x_val_selected = np.asarray(x_val_selected, dtype=np.float32)
+        x_val_selected = x_val_filt
+        #x_val_selected = selection.transform(x_val_filt)
+        #if configs["regression_method"] is Regressor.neural_network:
+        #    x_val_selected = np.asarray(x_val_selected, dtype=np.float32)
         y_val_pred = model.predict(x_val_selected)
         val_score = r2_score(y_val, y_val_pred)
         print(f"Fold {i}: Train R² = {train_score:.4f}, Validation R² = {val_score:.4f}")
