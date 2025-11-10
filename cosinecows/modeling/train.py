@@ -178,31 +178,31 @@ def fit(X, y):
                 C=86, 
                 epsilon=0.11
             )),
-            ('xgb', XGBRegressor(
-                n_estimators=2410,
-                max_depth=5,
-                min_child_weight=13,
-                gamma=2.372524993310688,
-                subsample=0.7462741587810254,
-                colsample_bytree=0.6076272376281038,
-                reg_alpha=1.3240662642357892,
-                reg_lambda=2.586392652975843,
-                learning_rate=0.03332460602580017,
-                random_state=configs["random_state"]
-            )),
+            # ('xgb', XGBRegressor(
+            #     n_estimators=2410,
+            #     max_depth=5,
+            #     min_child_weight=13,
+            #     gamma=2.372524993310688,
+            #     subsample=0.7462741587810254,
+            #     colsample_bytree=0.6076272376281038,
+            #     reg_alpha=1.3240662642357892,
+            #     reg_lambda=2.586392652975843,
+            #     learning_rate=0.03332460602580017,
+            #     random_state=configs["random_state"]
+            # )),
 
-            #('xgb', XGBRegressor(
-            #    n_estimators=10000,
-            #    max_depth=9,
-            #    min_child_weight=14,
-            #    gamma=1.4692138346993904,
-            #    subsample=0.5242435898389789,
-            #    colsample_bytree=0.7983736226513591,
-            #    reg_alpha=1.0788677992397164,
-            #    reg_lambda=2.1877404829230365,
-            #    learning_rate=0.0018296906700668437,
-            #    random_state=configs["random_state"]
-            #)),
+            ('xgb', XGBRegressor(
+               n_estimators=10000,
+               max_depth=9,
+               min_child_weight=14,
+               gamma=1.4692138346993904,
+               subsample=0.5242435898389789,
+               colsample_bytree=0.7983736226513591,
+               reg_alpha=1.0788677992397164,
+               reg_lambda=2.1877404829230365,
+               learning_rate=0.0018296906700668437,
+               random_state=configs["random_state"]
+            )),
             ('gp', GaussianProcessRegressor(
                 random_state=configs["random_state"], 
                 alpha=2.965074241784881e-09, #configs['gp_alpha'],
