@@ -174,9 +174,12 @@ def fit(X, y):
 
 
         estimators = [
-            ('svr', SVR(
+            ('svr', BaggingRegressor(
+                estimator=SVR(
                 C=86, 
                 epsilon=0.11
+                ),
+                random_state=configs['random_state']
             )),
             # ('xgb', XGBRegressor(
             #     n_estimators=2410,
@@ -191,7 +194,8 @@ def fit(X, y):
             #     random_state=configs["random_state"]
             # )),
 
-            ('xgb', XGBRegressor(
+            ('xgb', BaggingRegressor(
+                estimator=XGBRegressor(
                n_estimators=10000,
                max_depth=9,
                min_child_weight=14,
@@ -202,20 +206,28 @@ def fit(X, y):
                reg_lambda=2.1877404829230365,
                learning_rate=0.0018296906700668437,
                random_state=configs["random_state"]
-            )),
-            ('gp', GaussianProcessRegressor(
+                ),
+                random_state=configs['random_state'])
+            ),
+            ('gp', BaggingRegressor(
+                estimator=GaussianProcessRegressor(
                 random_state=configs["random_state"], 
                 alpha=2.965074241784881e-09, #configs['gp_alpha'],
                 kernel=RationalQuadratic(
                     length_scale=6.124209435262154, #configs['gp_kernel_length_scale'],
                     alpha=0.669737299146556, #configs['gp_kernel_alpha']
                 )
-            )),
+                ),
+                random_state=configs['random_state'])
+            ),
             ('bagging_svr', BaggingRegressor(
                 estimator=SVR(C=88, epsilon=0.09),
                 random_state=configs["random_state"],
             )),
-            ('nn', build_nn(X)),
+            ('nn', BaggingRegressor(
+                estimator=build_nn(X),
+                random_state=configs['random_state'])
+            ),
         ]
         # base models: regularized XGB, simple Ridge, and fast SVR
         # estimators = [
