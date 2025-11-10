@@ -188,7 +188,8 @@ def fit(X, y):
             k_best=201,
         )
 
-        xgb_model= XGBRegressor(
+        xgb_model= BaggingRegressor(
+            estimator=XGBRegressor(
                     n_estimators=4563,
                     max_depth=6,
                     min_child_weight=13,
@@ -199,7 +200,9 @@ def fit(X, y):
                     reg_lambda=2.9324605767035323,
                     learning_rate=0.0066215147930692225,
                     random_state=configs["random_state"]
-            )
+            ),
+            random_state=configs["random_state"]
+        )
         xgb_pipeline = Pipeline([
             ('feature_selection', xgb_f),
             ('xgb', xgb_model)
@@ -210,25 +213,33 @@ def fit(X, y):
             k_best=205,
         )
 
-        gpr_model = GaussianProcessRegressor(
+
+        gpr_model = BaggingRegressor(
+            estimator=GaussianProcessRegressor(
                     random_state=configs["random_state"], 
                     alpha=3.935643578586644e-10, #configs['gp_alpha'],
                     kernel=RationalQuadratic(
                         length_scale=6.240171100411289, #configs['gp_kernel_length_scale'],
                         alpha=0.7052022185369317, #configs['gp_kernel_alpha']
                     )
-            )
+            ),
+            random_state=configs["random_state"],
+        )
         
+
         gp_pipeline = Pipeline([
             ('feature_selection', fs_pipe_old),
             ('standard_scaler', StandardScaler()),
             ('gpr', gpr_model)
         ])
 
-        svr_model = SVR(
+        svr_model = BaggingRegressor(
+            estimator=SVR(
                 C=86, 
                 epsilon=0.11
-            )
+            ),
+            random_state=configs["random_state"],
+        )
         svr_pipeline = Pipeline([
             ('feature_selection', fs_pipe_old),
             ('standard_scaler', StandardScaler()),
@@ -236,23 +247,26 @@ def fit(X, y):
         ])
 
 
-        svr_bagging_f = fs_pipe_old
-        svr_bagging_model = BaggingRegressor(
-                estimator=SVR(C=88, epsilon=0.09),
-                random_state=configs["random_state"],
-            )
-        svr_bagging_pipeline = Pipeline([
-            ('feature_selection', fs_pipe_old),
-            ('standard_scaler', StandardScaler()),
-            ('bagging_svr', svr_bagging_model)
-        ])
+        #svr_bagging_f = fs_pipe_old
+        #svr_bagging_model = BaggingRegressor(
+        #        estimator=SVR(C=88, epsilon=0.09),
+        #        random_state=configs["random_state"],
+        #    )
+        #svr_bagging_pipeline = Pipeline([
+        #    ('feature_selection', fs_pipe_old),
+        #    ('standard_scaler', StandardScaler()),
+        #    ('bagging_svr', svr_bagging_model)
+        #])
         ###############################
         nn_f = feature_selection(
             score_func='random_forest_regressor',
             k_best=53,
         )
 
-        nn_model = build_nn(X)
+        nn_model = BaggingRegressor(
+            estimator=build_nn(X),
+            random_state=configs["random_state"],
+        )
 
         nn_pipeline = Pipeline([
             ('feature_selection', nn_f),
@@ -281,7 +295,7 @@ def fit(X, y):
             #)),
 
 
-            ('bagging_svr', svr_bagging_pipeline),
+            #('bagging_svr', svr_bagging_pipeline),
             ('nn', nn_pipeline),
 
             #('catboost', CatBoostRegressor(
