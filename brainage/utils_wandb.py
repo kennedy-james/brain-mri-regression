@@ -1,8 +1,5 @@
 import wandb
 from matplotlib import pyplot as plt
-
-from brainage.config import configs
-from brainage.modeling.train import run_cv_experiment
 from brainage.plots import generate_plot
 
 

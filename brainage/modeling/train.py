@@ -3,14 +3,11 @@ Train models.
 """
 import pandas as pd
 import numpy as np
-import torch
-import torch.optim as opt
 import torch.nn as nn
-from sklearn.ensemble import ExtraTreesRegressor, RandomForestRegressor, StackingRegressor, BaggingRegressor, VotingRegressor
+from sklearn.ensemble import StackingRegressor, BaggingRegressor
 from sklearn.linear_model import Ridge
 from sklearn.metrics import r2_score
 from sklearn.model_selection import train_test_split, KFold
-from sklearn.pipeline import make_pipeline
 from sklearn.preprocessing import StandardScaler
 from sklearn.svm import SVR
 from xgboost import XGBRegressor
@@ -21,11 +18,10 @@ from sklearn.pipeline import Pipeline
 from sklearn.compose import TransformedTargetRegressor
 from pytorch_tabnet.tab_model import TabNetRegressor
 from skorch.dataset import Dataset
-#from catboost import CatBoostRegressor, Pool
 
 
 from brainage.config import configs, Regressor
-from brainage.feature_selection import PassthroughSelector, feature_selection, feature_selection_old
+from brainage.feature_selection import feature_selection, feature_selection_old
 from brainage.imputation import imputation
 from brainage.outlier_detection import outlier_detection
 

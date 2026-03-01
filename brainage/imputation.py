@@ -2,7 +2,6 @@ import os
 
 import joblib
 from sklearn import pipeline
-from sklearn.experimental import enable_iterative_imputer
 from sklearn.impute import IterativeImputer, KNNImputer, SimpleImputer
 from sklearn.linear_model import Ridge
 from sklearn.pipeline import make_pipeline

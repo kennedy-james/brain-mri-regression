@@ -1,7 +1,5 @@
 from enum import Enum, auto
 import torch.nn as nn
-from torchmetrics import R2Score
-import torch.optim as opt
 
 class RunMode(Enum):
     final_evaluation = auto() # produce submission file for test data
