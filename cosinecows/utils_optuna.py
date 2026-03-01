@@ -135,6 +135,14 @@ def objective(trial, x, y):
     #         'depth': trial.suggest_int('depth', low=4, high=10),
     #         'l2_leaf_reg': trial.suggest_float('l2_leaf_reg', low=1.0, high=10.0),
     #     }
+    if configs['regression_method'] == Regressor.svr:
+
+        configs['regression_params'] = {
+            'svr_kernel': trial.suggest_categorical('svr_kernel', ['linear', 'poly', 'rbf', 'sigmoid']),
+            'svr_C': trial.suggest_float('svr_C', low=1e-5, high=1e5, log=True),
+            'svr_epsilon': trial.suggest_float('svr_epsilon', low=0, high=1),
+            'svr_gamma': trial.suggest_categorical('svr_gamma', ['scale', 'auto'])
+        }
 
     # --- 4. Run the Experiment ---
     configs['folds'] = 4  # use fewer folds for faster tuning.
@@ -158,26 +166,38 @@ def objective_stacker(trial, x, y):
 
     # --- 1. Tune Pipeline Hyperparameters ---
 
+    # imputation
+    impute_method = trial.suggest_categorical('impute_method', ['knn', 'mean'])
+    configs['impute_method'] = Imputer[impute_method]
+    if impute_method == 'knn':
+        configs['knn_neighbours'] = 75
+        configs['knn_weight'] = 'uniform'  # possible neighbour weights for average (uniform, distance)
+
     # Tune Feature Selection Percentile
     # This is the most important parameter to tune.
-    percentile = trial.suggest_int('selection_percentile', 20, 60)
-    configs['selection_percentile'] = percentile
+    # percentile = trial.suggest_int('selection_percentile', 20, 60)
+    # configs['selection_percentile'] = percentile
 
+    # FIXED outlier removal
     # Tune Outlier Detector (the one you are currently using)
-    configs['outlier_method'] = OutlierDetector.pca_isoforest
+    # configs['outlier_method'] = OutlierDetector.pca_isoforest
+    # contamination = trial.suggest_float('pca_isoforest_contamination', 0.01, 0.05)
+    # configs['pca_isoforest_contamination'] = contamination
+    # n_components = trial.suggest_int('pca_n_components', 5, 20)
+    # configs['pca_n_components'] = n_components
 
-    contamination = trial.suggest_float('pca_isoforest_contamination', 0.01, 0.05)
-    configs['pca_isoforest_contamination'] = contamination
+    # feature selection
+    selection_k_best = trial.suggest_int('selection_k_best', 10, 500)
+    configs['selection_k_best'] = selection_k_best
 
-    n_components = trial.suggest_int('pca_n_components', 5, 20)
-    configs['pca_n_components'] = n_components
 
     # --- 2. Set Model ---
     # We are explicitly tuning the pipeline FOR the stacking regressor
     configs['regression_method'] = Regressor.stacking
 
+
     # --- 3. Run the Experiment ---
-    configs['folds'] = 3  # Use fewer folds for faster tuning
+    configs['folds'] = 5  # Use fewer folds for faster tuning
 
     try:
         cv_df = run_cv_experiment(x, y)

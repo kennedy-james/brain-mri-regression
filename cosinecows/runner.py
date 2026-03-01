@@ -20,8 +20,8 @@ x_train, y_train = load_train_data()
 def run_final_evaluation():
     # Generates submission.csv using the single configuration defined in the global 'configs' dict
     print(f"🚀 Running final evaluation pipeline with:")
-    print(f"Loading configuration from: {configs['optuna']['load_file']}...")
-    load_best_params(json_file=configs['optuna']['load_file'])
+    # print(f"Loading configuration from: {configs['optuna']['load_file']}...")
+    # load_best_params(json_file=configs['optuna']['load_file'])
 
     print(f"   Final Model: {configs['regression_method'].name}")
     print(f"   Final Outlier Detector: {configs['outlier_method'].name}")
@@ -44,15 +44,16 @@ def run_final_evaluation():
         print(f"\nSaving trained pipeline to {final_pipeline_path}...")
         pipeline_components = {
             'imputer': imputer,
-            'selection': selection,
+            #'selection': selection,
             'model': model
         }
-        joblib.dump(pipeline_components, final_pipeline_path)
+        #joblib.dump(pipeline_components, final_pipeline_path)
         print("✅ Pipeline trained and saved.")
 
     print("\nGenerating predictions on test data...")
     x_test_imputed = imputer.transform(x_test)
-    x_test_selected = selection.transform(x_test_imputed)  # apply feature selection, NO outlier removal
+    #x_test_selected = selection.transform(x_test_imputed)  # apply feature selection, NO outlier removal
+    x_test_selected = x_test_imputed
     y_test_pred = model.predict(x_test_selected)
 
     # Save predictions to submission file
@@ -119,7 +120,7 @@ def run_optuna_search():
     study.optimize(
         lambda trial: objective_func(trial, x_train, y_train),
         #n_trials= configs.get('n_trials', 50)
-        n_trials=700
+        n_trials=50
     )
 
     print("\n\n--- 🏆 Optuna Search Complete ---")

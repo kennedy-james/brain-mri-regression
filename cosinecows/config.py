@@ -39,18 +39,19 @@ class Regressor(Enum):
     neural_network = auto()
     gaussian_process = auto()
     tab_net = auto()
+    svr = auto()
 
 
-RUNNING_MODE = RunMode.optuna_search
+RUNNING_MODE = RunMode.final_evaluation
 configs = {
     'folds': 10,
     'random_state': 42,
     'impute_method': Imputer.knn,
     'outlier_method': OutlierDetector.pca_isoforest,
-    'regression_method': Regressor.extra_trees,
+    'regression_method': Regressor.stacking,
     'optuna': {
         'load_file': 'best_params_xgb.json',
-        'objective_to_run': 'xgb', # stacker or xbg
+        'objective_to_run': 'stacker', # stacker or xbg
     }
 }
 
@@ -58,7 +59,7 @@ configs = {
 match configs['impute_method']:
     case Imputer.knn:
         imputation_config = {
-            'knn_neighbours': 75,
+            'knn_neighbours': 40,
             'knn_weight': 'uniform',  # possible neighbour weights for average (uniform, distance)
         }
     case Imputer.iterative:
@@ -92,13 +93,6 @@ match configs['outlier_method']:
     case _:
         outlier_config = {}
 
-selection_config = {
-    'selection_is_enabled': True,
-    'selection_thresh_var': 0.01,
-    'selection_thresh_corr': 0.90,
-    'selection_rf_max_feats': 44,
-    'selection_percentile': 32
-}
 
 # Add configuration for regression
 match configs['regression_method']:
@@ -125,7 +119,7 @@ match configs['regression_method']:
     case Regressor.xgb | Regressor.stacking:
         regression_config = {
             'xgb_eval_metric': 'rmse',
-            'xgb_early_stopping_rounds': 20
+            'xgb_early_stopping_rounds': 400
         }
     case Regressor.gradient_boosting:
         regression_config = {
@@ -136,8 +130,9 @@ match configs['regression_method']:
         }
     case Regressor.gaussian_process:
         regression_config = {
-            'length_scale': 6.124209435262154,
-            'alpha': 0.669737299146556,
+            # kernel rational quadratic
+            'gp_kernel_length_scale': 6.124209435262154,
+            'gp_kernel_alpha': 0.669737299146556,
             'gp_alpha': 2.965074241784881e-09
         }
     case Regressor.tab_net:
@@ -172,8 +167,25 @@ match configs['regression_method']:
                 'ccp_alpha': 0.0
             }
         }
+    case Regressor.svr:
+        regression_config = {
+            'svr_kernel': 'linear',
+            'svr_C': 86.418,
+            'svr_epsilon': 0.11,
+            'svr_gamma': 'scale'
+        }
     case _:
         regression_config = {}
+
+selection_config = {
+    'selection_is_enabled': True,
+    'selection_thresh_var': 0.01,
+    'selection_thresh_corr': 0.90,
+    'selection_rf_max_feats': 44,
+    'selection_percentile': 32,
+    'selection_k_best': 194,
+}
+
 
 # generate final configs file from components
 configs = {

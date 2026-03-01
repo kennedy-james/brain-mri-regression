@@ -3,7 +3,7 @@ from pyod.models.knn import KNN
 from sklearn.decomposition import PCA
 from sklearn.ensemble import IsolationForest
 from sklearn.pipeline import make_pipeline
-from sklearn.preprocessing import StandardScaler
+from sklearn.preprocessing import StandardScaler, RobustScaler
 from sklearn.svm import OneClassSVM
 
 from cosinecows.config import configs, OutlierDetector
@@ -87,7 +87,7 @@ def outlier_detection(X, y):
     elif method is OutlierDetector.pca_isoforest:  # PCA + Isolation Forest
         # IsoForest is not sensitive to scale, so StandardScaler isn't  strictly required for the model, but for PCA.
         pca_isoforest_pipeline = make_pipeline(
-            StandardScaler(),
+            RobustScaler(),
             PCA(n_components=configs['pca_n_components'], random_state=configs["random_state"]),
             IsolationForest(contamination=configs['pca_isoforest_contamination'], random_state=configs["random_state"])
         )
