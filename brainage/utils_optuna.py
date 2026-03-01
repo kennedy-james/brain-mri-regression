@@ -1,5 +1,5 @@
-from cosinecows.config import Imputer, configs, OutlierDetector, Regressor
-from cosinecows.modeling.train import run_cv_experiment
+from brainage.config import Imputer, configs, OutlierDetector, Regressor
+from brainage.modeling.train import run_cv_experiment
 from sklearn.gaussian_process.kernels import RationalQuadratic
 #catboost
 

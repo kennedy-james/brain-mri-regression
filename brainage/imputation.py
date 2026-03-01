@@ -8,8 +8,8 @@ from sklearn.linear_model import Ridge
 from sklearn.pipeline import make_pipeline
 from sklearn.preprocessing import StandardScaler
 
-from cosinecows.config import configs, Imputer
-from cosinecows.dataset import IMPUTERS_DIR
+from brainage.config import configs, Imputer
+from brainage.dataset import IMPUTERS_DIR
 
 
 def imputation(X, i):

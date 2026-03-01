@@ -3,8 +3,8 @@ import json
 from matplotlib import pyplot as plt
 import seaborn as sns
 
-from cosinecows.config import configs, Regressor, OutlierDetector, Imputer
-from cosinecows.dataset import REPORTS_DIR
+from brainage.config import configs, Regressor, OutlierDetector, Imputer
+from brainage.dataset import REPORTS_DIR
 
 
 def load_best_params(json_file="best_params.json"):

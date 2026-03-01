@@ -11,7 +11,7 @@ from sklearn.pipeline import make_pipeline
 from sklearn.preprocessing import RobustScaler, StandardScaler
 from sklearn.linear_model import Lasso
 
-from cosinecows.config import configs
+from brainage.config import configs
 
 
 class CorrelationRemover(BaseEstimator, TransformerMixin):

@@ -6,7 +6,7 @@ from sklearn.pipeline import make_pipeline
 from sklearn.preprocessing import StandardScaler, RobustScaler
 from sklearn.svm import OneClassSVM
 
-from cosinecows.config import configs, OutlierDetector
+from brainage.config import configs, OutlierDetector
 
 
 def outlier_detection(X, y):

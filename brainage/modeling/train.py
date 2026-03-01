@@ -24,10 +24,10 @@ from skorch.dataset import Dataset
 #from catboost import CatBoostRegressor, Pool
 
 
-from cosinecows.config import configs, Regressor
-from cosinecows.feature_selection import PassthroughSelector, feature_selection, feature_selection_old
-from cosinecows.imputation import imputation
-from cosinecows.outlier_detection import outlier_detection
+from brainage.config import configs, Regressor
+from brainage.feature_selection import PassthroughSelector, feature_selection, feature_selection_old
+from brainage.imputation import imputation
+from brainage.outlier_detection import outlier_detection
 
 class Float32Dataset(Dataset):
     def __init__(self, X, y=None):

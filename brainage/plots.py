@@ -1,7 +1,7 @@
 import matplotlib.pyplot as plt
 import seaborn as sns
 
-from cosinecows.config import configs
+from brainage.config import configs
 
 
 def generate_plot(cv_df):

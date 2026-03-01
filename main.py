@@ -1,5 +1,5 @@
-from cosinecows.config import RUNNING_MODE
-from cosinecows.runner import run
+from brainage.config import RUNNING_MODE
+from brainage.runner import run
 
 
 def main():

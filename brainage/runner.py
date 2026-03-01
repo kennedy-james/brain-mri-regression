@@ -5,13 +5,13 @@ import numpy as np
 import pandas as pd
 import optuna
 import json
-from cosinecows.config import RUNNING_MODE, configs, RunMode, Imputer, OutlierDetector, Regressor
-from cosinecows.dataset import load_train_data, load_test_data, MODELS_DIR, REGRESSORS_DIR
-from cosinecows.dataset import RAW_DATA_DIR, PROCESSED_DATA_DIR
-from cosinecows.io import load_best_params, save_results_locally
-from cosinecows.modeling.train import train_model, run_cv_experiment
-from cosinecows.utils_optuna import objective_stacker, objective
-from cosinecows.utils_wandb import log_results_to_wandb
+from brainage.config import RUNNING_MODE, configs, RunMode, Imputer, OutlierDetector, Regressor
+from brainage.dataset import load_train_data, load_test_data, MODELS_DIR, REGRESSORS_DIR
+from brainage.dataset import RAW_DATA_DIR, PROCESSED_DATA_DIR
+from brainage.io import load_best_params, save_results_locally
+from brainage.modeling.train import train_model, run_cv_experiment
+from brainage.utils_optuna import objective_stacker, objective
+from brainage.utils_wandb import log_results_to_wandb
 
 print('Loading training data (optuna global access)...')
 x_train, y_train = load_train_data()

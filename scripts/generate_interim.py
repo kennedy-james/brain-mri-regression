@@ -1,9 +1,9 @@
-from cosinecows.config import configs, Imputer
-from cosinecows.imputation import imputation
-from cosinecows.dataset import load_train_data
+from brainage.config import configs, Imputer
+from brainage.imputation import imputation
+from brainage.dataset import load_train_data
 from enum import Enum, auto
 import pandas as pd
-from cosinecows.dataset import INTERIM_DATA_DIR
+from brainage.dataset import INTERIM_DATA_DIR
 
 class InterimMode(Enum):
     """Sequential steps need previous step data to proceed."""
