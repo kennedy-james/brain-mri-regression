@@ -16,16 +16,13 @@ print('Loading training data (optuna global access)...')
 x_train, y_train = load_train_data()
 
 
-def run_final_evaluation():
-    # Generates submission.csv using the single configuration defined in the global 'configs' dict
-    print(f"🚀 Running final evaluation pipeline with:")
-    # print(f"Loading configuration from: {configs['optuna']['load_file']}...")
-    # load_best_params(json_file=configs['optuna']['load_file'])
+def run_final_evaluation() -> None:
+    """Generate submission.csv using the single configuration defined in the global 'configs' dict"""
+    print("🚀 Running final evaluation pipeline with:")
 
     print(f"   Final Model: {configs['regression_method'].name}")
     print(f"   Final Outlier Detector: {configs['outlier_method'].name}")
     print(f"   Final Selection Percentile: {configs['selection_percentile']}")
-    # --- END NEW ---
 
     x_test = load_test_data()
     final_pipeline_path = REGRESSORS_DIR / 'impKnn-outlierPcaIsofor-featSelect-stacking.pkl'
@@ -38,7 +35,7 @@ def run_final_evaluation():
         print("✅ Pipeline loaded from disk.")
 
     else:
-        print(f"\nNo pre-trained pipeline found. Training model from scratch...")
+        print("\nNo pre-trained pipeline found. Training model from scratch...")
         imputer, detector, selection, model, _, _ = train_model(x_train, y_train, i=None)
         print(f"\nSaving trained pipeline to {final_pipeline_path}...")
         pipeline_components = {
@@ -61,7 +58,7 @@ def run_final_evaluation():
     print("\n✅ Successfully generated submission.csv")
 
 
-def run_wandb():
+def run_wandb() -> None:
     # Runs a single CV experiment (using 'configs') and logs to W&B.
     print(f"🚀 Starting W&B run for: {configs['regression_method']} + {configs['outlier_method']}")
     with wandb.init(
@@ -75,14 +72,14 @@ def run_wandb():
         log_results_to_wandb(cv_df, run)
 
 
-def run_current_config():
+def run_current_config() -> None:
     print(
         f"🚀 Starting single local CV run for: {configs['regression_method'].name} + {configs['outlier_method'].name}")
     cv_df = run_cv_experiment(x_train, y_train)
     save_results_locally(cv_df, is_grouped_run=False)  # Use the helper
 
 
-def run_grid():
+def run_grid() -> None:
     # Runs all combinations of models and outlier detectors locally. Saves one CSV and one plot with all results.
     print("🚀 Starting local 'Run All' comparison...")
     all_results_dfs = []
@@ -99,7 +96,7 @@ def run_grid():
     save_results_locally(results_df, is_grouped_run=True)
 
 
-def run_optuna_search():
+def run_optuna_search() -> None:
     print("🚀 Starting Optuna hyperparameter search...")
     storage_name = 'sqlite:///optuna_study.db'
 
@@ -163,7 +160,7 @@ def run_optuna_search():
     print("✅ Best model details logged to W&B.")
 
 
-def run_optuna_config():
+def run_optuna_config() -> None:
     load_best_params(json_file=configs['optuna']['load_file'])
     print(
         f"🚀 Starting single local CV run for: {configs['regression_method'].name} + {configs['outlier_method'].name}")
@@ -171,7 +168,7 @@ def run_optuna_config():
     save_results_locally(cv_df, is_grouped_run=False)
 
 
-def run(mode: RunMode):
+def run(mode: RunMode) -> None:
     match mode:
         case RunMode.final_evaluation:
             run_final_evaluation()
