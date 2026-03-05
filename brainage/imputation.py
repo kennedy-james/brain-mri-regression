@@ -28,27 +28,27 @@ def imputation(X, i):
         imputer.fit(X)
     elif method is Imputer.knn:
         scaler = StandardScaler()
-        knn_imputer = KNNImputer(n_neighbors=configs["knn_neighbours"], weights=configs["knn_weight"])
+        knn_imputer = KNNImputer(
+            n_neighbors=configs["knn_neighbours"], weights=configs["knn_weight"]
+        )
         imputer = pipeline.make_pipeline(scaler, knn_imputer)
         imputer.fit(X)
-    elif method is Imputer.iterative: # iterative imputer
-        loadable_file = IMPUTERS_DIR / f'{configs["iterative_estimator"].split("(")[0]}{configs["iterative_iter"]}_{i}.pkl'
+    elif method is Imputer.iterative:  # iterative imputer
+        loadable_file = (
+            IMPUTERS_DIR
+            / f'{configs["iterative_estimator"].split("(")[0]}{configs["iterative_iter"]}_{i}.pkl'
+        )
         if i is not None and os.path.isfile(loadable_file):
             print(f"--- 🔄 Loading existing imputer from {loadable_file} ---")
             imputer = joblib.load(loadable_file)
         else:
             print(f"--- 🛠️ Training new imputer and saving to {loadable_file} ---")
-            if configs["iterative_estimator"] == 'Ridge()':
+            if configs["iterative_estimator"] == "Ridge()":
                 imputer = IterativeImputer(
                     random_state=configs["random_state"],
-                    estimator=make_pipeline(
-                        StandardScaler(),
-                        Ridge()
-                    ),
+                    estimator=make_pipeline(StandardScaler(), Ridge()),
                     max_iter=configs["iterative_iter"],
                 )
                 imputer.fit(X)
                 joblib.dump(imputer, loadable_file)
     return imputer
-
-

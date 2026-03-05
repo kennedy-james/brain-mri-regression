@@ -1,6 +1,7 @@
 """
 Run inference with trained models.
 """
+
 from typing import Dict, Any
 
 import numpy as np

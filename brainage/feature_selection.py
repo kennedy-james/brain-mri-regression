@@ -1,11 +1,17 @@
 """
 Generate features for modeling.
 """
+
 import numpy as np
 import pandas as pd
 from sklearn.base import BaseEstimator, TransformerMixin
 from sklearn.ensemble import RandomForestRegressor
-from sklearn.feature_selection import SelectKBest, VarianceThreshold, mutual_info_regression, f_regression
+from sklearn.feature_selection import (
+    SelectKBest,
+    VarianceThreshold,
+    mutual_info_regression,
+    f_regression,
+)
 from sklearn.impute import SimpleImputer
 from sklearn.pipeline import make_pipeline
 from sklearn.preprocessing import RobustScaler, StandardScaler
@@ -20,8 +26,14 @@ class CorrelationRemover(BaseEstimator, TransformerMixin):
     def fit(self, X, y=None):
         df = pd.DataFrame(X)
         corr_matrix = df.corr(numeric_only=True).abs()
-        upper_triangle = corr_matrix.where(np.triu(np.ones(corr_matrix.shape), k=1).astype(bool))
-        self.to_drop_ = [col for col in upper_triangle.columns if any(upper_triangle[col] > self.threshold)]
+        upper_triangle = corr_matrix.where(
+            np.triu(np.ones(corr_matrix.shape), k=1).astype(bool)
+        )
+        self.to_drop_ = [
+            col
+            for col in upper_triangle.columns
+            if any(upper_triangle[col] > self.threshold)
+        ]
         return self
 
     def transform(self, X):
@@ -36,11 +48,12 @@ class PassthroughSelector(BaseEstimator, TransformerMixin):
     hacky simple transformer passing data through without modification.
     Used to bypass feature selection.
     """
+
     def fit(self, X, y=None):
-        return self # Nothing to fit
+        return self  # Nothing to fit
 
     def transform(self, X):
-        return X # Just return the data
+        return X  # Just return the data
 
 
 class PrintShape(BaseEstimator, TransformerMixin):
@@ -59,10 +72,9 @@ class PrintShape(BaseEstimator, TransformerMixin):
 
 def feature_selection_old(thresh_var=0.01, k_best=200):
 
-
-    print(f'Using feature selection pipeline with: {thresh_var = }, {k_best = }')
+    print(f"Using feature selection pipeline with: {thresh_var = }, {k_best = }")
     selection = make_pipeline(
-        SimpleImputer(strategy='median'),  # ensure no NaNs
+        SimpleImputer(strategy="median"),  # ensure no NaNs
         RobustScaler(),  # robust scaling
         VarianceThreshold(threshold=thresh_var),  # low variance removal
         PrintShape(message="after VarianceThreshold"),  # Logs after this step
@@ -71,7 +83,7 @@ def feature_selection_old(thresh_var=0.01, k_best=200):
     return selection
 
 
-def feature_selection(thresh_var=0.01, score_func='f_regression', k_best=200):
+def feature_selection(thresh_var=0.01, score_func="f_regression", k_best=200):
     def rf(X, y):
         model = RandomForestRegressor(n_estimators=100, random_state=42)
         model.fit(X, y)
@@ -91,30 +103,32 @@ def feature_selection(thresh_var=0.01, score_func='f_regression', k_best=200):
     ]
 
     # Map string to function after deciding on scaler
-    if score_func in ['f_regression', 'lasso_regression']:
+    if score_func in ["f_regression", "lasso_regression"]:
         steps.append(StandardScaler())
 
-    if score_func == 'f_regression':
+    if score_func == "f_regression":
         score_func = f_regression
-    elif score_func == 'mutual_info_regression':
+    elif score_func == "mutual_info_regression":
         score_func = mutual_info_regression
-    elif score_func == 'random_forest_regressor':
+    elif score_func == "random_forest_regressor":
         score_func = rf
-    elif score_func == 'lasso_regression':
+    elif score_func == "lasso_regression":
         score_func = lasso
     else:
         raise ValueError(f"Unknown score_func: {score_func}")
 
-    steps.extend([
-        SelectKBest(score_func=score_func, k=k_best),
-        PrintShape(message="after SelectKBest"),
-        # CorrelationRemover(threshold=thresh_corr),  # high correlation removal
-        # PrintShape(message="after CorrelationRemover"),  # Logs after this step
-        # SelectPercentile(score_func=mutual_info_regression, percentile=percentile),  # Use the passed percentile
-        # PrintShape(message="after SelectPercentile"),  # Logs after this step
-        # rf_selector,  # non-linear embedded selection (RF instead of Lasso)
-        # PrintShape(message="after RandomForestSelector")  # Logs after this step
-    ])
+    steps.extend(
+        [
+            SelectKBest(score_func=score_func, k=k_best),
+            PrintShape(message="after SelectKBest"),
+            # CorrelationRemover(threshold=thresh_corr),  # high correlation removal
+            # PrintShape(message="after CorrelationRemover"),  # Logs after this step
+            # SelectPercentile(score_func=mutual_info_regression, percentile=percentile),  # Use the passed percentile
+            # PrintShape(message="after SelectPercentile"),  # Logs after this step
+            # rf_selector,  # non-linear embedded selection (RF instead of Lasso)
+            # PrintShape(message="after RandomForestSelector")  # Logs after this step
+        ]
+    )
 
     selection = make_pipeline(*steps)
     return selection

@@ -12,7 +12,7 @@ from brainage.modeling.train import train_model, run_cv_experiment
 from brainage.utils_optuna import objective_stacker, objective
 from brainage.utils_wandb import log_results_to_wandb
 
-print('Loading training data (optuna global access)...')
+print("Loading training data (optuna global access)...")
 x_train, y_train = load_train_data()
 
 
@@ -25,48 +25,56 @@ def run_final_evaluation() -> None:
     print(f"   Final Selection Percentile: {configs['selection_percentile']}")
 
     x_test = load_test_data()
-    final_pipeline_path = REGRESSORS_DIR / 'impKnn-outlierPcaIsofor-featSelect-stacking.pkl'
+    final_pipeline_path = (
+        REGRESSORS_DIR / "impKnn-outlierPcaIsofor-featSelect-stacking.pkl"
+    )
     if False:
         print(f"\nLoading pre-trained pipeline from {final_pipeline_path}...")
         pipeline_components = joblib.load(final_pipeline_path)
-        imputer = pipeline_components['imputer']
-        selection = pipeline_components['selection']
-        model = pipeline_components['model']
+        imputer = pipeline_components["imputer"]
+        selection = pipeline_components["selection"]
+        model = pipeline_components["model"]
         print("✅ Pipeline loaded from disk.")
 
     else:
         print("\nNo pre-trained pipeline found. Training model from scratch...")
-        imputer, detector, selection, model, _, _ = train_model(x_train, y_train, i=None)
+        imputer, detector, selection, model, _, _ = train_model(
+            x_train, y_train, i=None
+        )
         print(f"\nSaving trained pipeline to {final_pipeline_path}...")
         pipeline_components = {
-            'imputer': imputer,
+            "imputer": imputer,
             #'selection': selection,
-            'model': model
+            "model": model,
         }
-        #joblib.dump(pipeline_components, final_pipeline_path)
+        # joblib.dump(pipeline_components, final_pipeline_path)
         print("✅ Pipeline trained and saved.")
 
     print("\nGenerating predictions on test data...")
     x_test_imputed = imputer.transform(x_test)
-    #x_test_selected = selection.transform(x_test_imputed)  # apply feature selection, NO outlier removal
+    # x_test_selected = selection.transform(x_test_imputed)  # apply feature selection, NO outlier removal
     x_test_selected = x_test_imputed
     y_test_pred = model.predict(x_test_selected)
 
     # Save predictions to submission file
-    table = pd.DataFrame({"id": np.arange(0, y_test_pred.shape[0]), "y": y_test_pred.flatten()})
+    table = pd.DataFrame(
+        {"id": np.arange(0, y_test_pred.shape[0]), "y": y_test_pred.flatten()}
+    )
     table.to_csv(PROCESSED_DATA_DIR / "submission.csv", index=False)
     print("\n✅ Successfully generated submission.csv")
 
 
 def run_wandb() -> None:
     # Runs a single CV experiment (using 'configs') and logs to W&B.
-    print(f"🚀 Starting W&B run for: {configs['regression_method']} + {configs['outlier_method']}")
+    print(
+        f"🚀 Starting W&B run for: {configs['regression_method']} + {configs['outlier_method']}"
+    )
     with wandb.init(
-            project="AML_task1",
-            config=configs,
-            tags=["regression", configs["regression_method"], configs['outlier_method']],
-            name=f"regressor {configs['regression_method']}_{configs['outlier_method']}",
-            notes=f''
+        project="AML_task1",
+        config=configs,
+        tags=["regression", configs["regression_method"], configs["outlier_method"]],
+        name=f"regressor {configs['regression_method']}_{configs['outlier_method']}",
+        notes=f"",
     ) as run:
         cv_df = run_cv_experiment(x_train, y_train)
         log_results_to_wandb(cv_df, run)
@@ -74,7 +82,8 @@ def run_wandb() -> None:
 
 def run_current_config() -> None:
     print(
-        f"🚀 Starting single local CV run for: {configs['regression_method'].name} + {configs['outlier_method'].name}")
+        f"🚀 Starting single local CV run for: {configs['regression_method'].name} + {configs['outlier_method'].name}"
+    )
     cv_df = run_cv_experiment(x_train, y_train)
     save_results_locally(cv_df, is_grouped_run=False)  # Use the helper
 
@@ -98,29 +107,32 @@ def run_grid() -> None:
 
 def run_optuna_search() -> None:
     print("🚀 Starting Optuna hyperparameter search...")
-    storage_name = 'sqlite:///optuna_study.db'
+    storage_name = "sqlite:///optuna_study.db"
 
-    if configs['optuna']['objective_to_run'] == 'stacker':
-        study_name = 'aml-stacker-pipeline'
+    if configs["optuna"]["objective_to_run"] == "stacker":
+        study_name = "aml-stacker-pipeline"
         objective_func = objective_stacker
         print(f"Tuning STACKER PIPELINE (study: {study_name})")
     else:
-        study_name = 'aml-xgb-single'
+        study_name = "aml-xgb-single"
         objective_func = objective
         print(f"Tuning SINGLE XGB (study: {study_name})")
 
-
-
-    study = optuna.create_study(storage=storage_name, study_name=study_name, direction='maximize', load_if_exists=True)
+    study = optuna.create_study(
+        storage=storage_name,
+        study_name=study_name,
+        direction="maximize",
+        load_if_exists=True,
+    )
     # run 50 different trials. may take long
     study.optimize(
         lambda trial: objective_func(trial, x_train, y_train),
-        #n_trials= configs.get('n_trials', 50)
-        n_trials=50
+        # n_trials= configs.get('n_trials', 50)
+        n_trials=50,
     )
 
     print("\n\n--- 🏆 Optuna Search Complete ---")
-    print(f'   study: {study.study_name}')
+    print(f"   study: {study.study_name}")
     print(f"Best Validation R²: {study.best_value:.4f}")
     print("Best Parameters:")
     print(study.best_params)
@@ -139,21 +151,22 @@ def run_optuna_search() -> None:
             **configs,
             "optuna_study": study_name,
             "best_params": study.best_params,
-            "mean_validation_score": study.best_value
-        },
-        tags=["best", "optuna", configs['optuna']['objective_to_run']],
-        job_type="final_best"
-    ) as run:
-        wandb.log({
-            "best_r2": study.best_value,
-            #"mean_validation_score": study.best_params,
             "mean_validation_score": study.best_value,
-            "n_trials_completed": len(study.trials)
-        })
+        },
+        tags=["best", "optuna", configs["optuna"]["objective_to_run"]],
+        job_type="final_best",
+    ) as run:
+        wandb.log(
+            {
+                "best_r2": study.best_value,
+                # "mean_validation_score": study.best_params,
+                "mean_validation_score": study.best_value,
+                "n_trials_completed": len(study.trials),
+            }
+        )
         # Save best params as artifact
         artifact = wandb.Artifact(
-            name=f"best-params-{configs['optuna']['objective_to_run']}",
-            type="config"
+            name=f"best-params-{configs['optuna']['objective_to_run']}", type="config"
         )
         artifact.add_file(best_params_file)
         wandb.log_artifact(artifact)
@@ -161,9 +174,10 @@ def run_optuna_search() -> None:
 
 
 def run_optuna_config() -> None:
-    load_best_params(json_file=configs['optuna']['load_file'])
+    load_best_params(json_file=configs["optuna"]["load_file"])
     print(
-        f"🚀 Starting single local CV run for: {configs['regression_method'].name} + {configs['outlier_method'].name}")
+        f"🚀 Starting single local CV run for: {configs['regression_method'].name} + {configs['outlier_method'].name}"
+    )
     cv_df = run_cv_experiment(x_train, y_train)
     save_results_locally(cv_df, is_grouped_run=False)
 
