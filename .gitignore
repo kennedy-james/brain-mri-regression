@@ -7,4 +7,3 @@ cv_run_*
 .venv/
 dist/
 .DS_Store
-uv.lock
