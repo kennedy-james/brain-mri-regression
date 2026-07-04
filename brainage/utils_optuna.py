@@ -223,7 +223,6 @@ def objective(trial, x, y):
     #         'l2_leaf_reg': trial.suggest_float('l2_leaf_reg', low=1.0, high=10.0),
     #     }
     if configs["regression_method"] == Regressor.svr:
-
         configs["regression_params"] = {
             "svr_kernel": trial.suggest_categorical(
                 "svr_kernel", ["linear", "poly", "rbf", "sigmoid"]

@@ -74,7 +74,7 @@ def run_wandb() -> None:
         config=configs,
         tags=["regression", configs["regression_method"], configs["outlier_method"]],
         name=f"regressor {configs['regression_method']}_{configs['outlier_method']}",
-        notes=f"",
+        notes="",
     ) as run:
         cv_df = run_cv_experiment(x_train, y_train)
         log_results_to_wandb(cv_df, run)

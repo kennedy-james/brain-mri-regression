@@ -36,7 +36,7 @@ def imputation(X, i):
     elif method is Imputer.iterative:  # iterative imputer
         loadable_file = (
             IMPUTERS_DIR
-            / f'{configs["iterative_estimator"].split("(")[0]}{configs["iterative_iter"]}_{i}.pkl'
+            / f"{configs['iterative_estimator'].split('(')[0]}{configs['iterative_iter']}_{i}.pkl"
         )
         if i is not None and os.path.isfile(loadable_file):
             print(f"--- 🔄 Loading existing imputer from {loadable_file} ---")
